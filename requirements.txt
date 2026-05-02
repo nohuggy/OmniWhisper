@@ -18,3 +18,4 @@ python-dotenv
 pytest
 tiktoken
 sentencepiece
+opencc-python-reimplemented

@@ -411,8 +411,27 @@ class OmniVoice(PreTrainedModel):
                 res = res_list[0] if res_list else {"text": "", "chunks": []}
                 
                 if res and (isinstance(res, dict) and res.get("chunks")):
+                    # Convert to Simplified Chinese if needed
+                    try:
+                        from opencc import OpenCC
+                        cc = OpenCC('t2s')
+                        res["text"] = cc.convert(res["text"])
+                        for chunk in res["chunks"]:
+                            chunk["text"] = cc.convert(chunk["text"])
+                    except Exception as ecc:
+                        print(f"[SRT] OpenCC conversion failed: {ecc}")
+                        
                     print(f"[SRT] Whisper produced {len(res['chunks'])} chunks via Monkeypatch.")
                     return res
+                
+                # Single string return path
+                if isinstance(res, dict) and "text" in res:
+                    try:
+                        from opencc import OpenCC
+                        cc = OpenCC('t2s')
+                        res["text"] = cc.convert(res["text"])
+                    except: pass
+                    return res["text"]
                 
                 return res
             finally:
