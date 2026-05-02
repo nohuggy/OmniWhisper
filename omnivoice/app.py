@@ -358,6 +358,14 @@ def build_app(model_path=None, whisper_path=None):
                         vc_text = gr.Textbox(label="Text to Synthesize", lines=5, placeholder="Enter text...")
                         vc_ref = gr.Audio(label="Reference Audio (Voice to Clone)", type="filepath", elem_classes="compact-audio")
                         
+                        vc_ref_text = gr.Textbox(
+                            label="Reference Text (Transcribed)", 
+                            lines=2, 
+                            placeholder="Transcript of reference audio. Click 'Transcribe' or wait for auto-transcribe.",
+                            info="AI uses this to understand the reference voice's style."
+                        )
+                        vc_transcribe_btn = gr.Button("🔍 Transcribe Reference", variant="secondary", size="sm")
+
                         with gr.Accordion("Advanced Settings", open=False):
                             vc_lang = gr.Dropdown(label="Language", choices=_LANG_DISPLAY, value="Auto")
                             vc_speed = gr.Slider(0.5, 2.0, value=0.9, step=0.05, label="Speed")
@@ -365,8 +373,8 @@ def build_app(model_path=None, whisper_path=None):
                             vc_steps = gr.Slider(4, 64, value=32, step=4, label="Inference Steps")
                             vc_gs = gr.Slider(0, 5, value=0.5, step=0.1, label="Guidance Scale")
                             vc_dn = gr.Checkbox(label="Denoise", value=True)
-                            vc_pp = gr.Checkbox(label="Preprocess Ref", value=True)
-                            vc_po = gr.Checkbox(label="Postprocess Output", value=True)
+                            vc_pp = gr.Checkbox(label="Preprocess Ref (Silence Removal)", value=True)
+                            vc_po = gr.Checkbox(label="Postprocess Output (Trim Silences)", value=True)
                             
                         vc_btn = gr.Button("Generate Voice", variant="primary")
                         
@@ -419,12 +427,27 @@ def build_app(model_path=None, whisper_path=None):
                         vd_status = gr.Textbox(label="Status", interactive=False)
 
         # Event Handlers
+        def transcribe_ref(audio):
+            if not audio: return ""
+            print(f"🎙️ Auto-transcribing reference audio...")
+            # Reuse the shared WHISPER_PIPE
+            # Note: pipeline handles file paths directly
+            result = WHISPER_PIPE(audio)
+            text = result.get("text", "").strip()
+            print(f"📝 Transcription: {text}")
+            return text
+
         def vc_handler(*args):
-            return generate_core(args[0], args[1], args[2], "", args[3], args[4], args[5], args[6], args[7], args[8], args[9], "clone")
+            # args: text, lang, ref_audio, ref_text, steps, gs, denoise, speed, dur, pp, po
+            return generate_core(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9], args[10], "clone")
             
+        # Transcription events
+        vc_ref.change(transcribe_ref, inputs=[vc_ref], outputs=[vc_ref_text])
+        vc_transcribe_btn.click(transcribe_ref, inputs=[vc_ref], outputs=[vc_ref_text])
+
         vc_btn.click(
             vc_handler,
-            inputs=[vc_text, vc_lang, vc_ref, vc_steps, vc_gs, vc_dn, vc_speed, vc_dur, vc_pp, vc_po],
+            inputs=[vc_text, vc_lang, vc_ref, vc_ref_text, vc_steps, vc_gs, vc_dn, vc_speed, vc_dur, vc_pp, vc_po],
             outputs=[vc_audio, vc_srt, vc_dl, vc_status]
         ).then(lambda dl: gr.update(visible=True, value=dl), inputs=[vc_dl], outputs=[vc_dl])
 
