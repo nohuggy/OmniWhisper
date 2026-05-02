@@ -1,0 +1,67 @@
+import os
+import re
+import numpy as np
+import soundfile as sf
+import torch
+from omnivoice import OmniVoice, OmniVoiceGenerationConfig
+
+def get_slug(text, max_tokens=8):
+    clean_text = re.sub(r"[^\w\s\u4e00-\u9fff]", "", text)
+    tokens = re.findall(r"[\u4e00-\u9fff]|[a-zA-Z0-9]+", clean_text)
+    selected = tokens[:max_tokens]
+    if not selected:
+        return "output"
+    res = selected[0]
+    for i in range(1, len(selected)):
+        prev, curr = selected[i - 1], selected[i]
+        if re.match(r"[a-zA-Z0-9]", prev) or re.match(r"[a-zA-Z0-9]", curr):
+            res += " " + curr
+        else:
+            res += curr
+    return res.strip()
+
+class TTSEngine:
+    def __init__(self, model_path, device=None):
+        if device is None:
+            self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        else:
+            self.device = device
+            
+        print(f"Initializing OmniVoice TTS Engine on {self.device}...")
+        self.model = OmniVoice(model_path, device=self.device)
+        self.sampling_rate = self.model.sampling_rate
+
+    def generate(self, text, language=None, voice_clone_audio=None, voice_clone_text=None, 
+                 instruct=None, speed=1.0, duration=None, num_step=32, 
+                 guidance_scale=2.0, denoise=True):
+        
+        gen_config = OmniVoiceGenerationConfig(
+            num_step=int(num_step),
+            guidance_scale=float(guidance_scale),
+            denoise=bool(denoise),
+        )
+
+        kw = dict(
+            text=text.strip(), 
+            language=language if (language and language != "Auto") else None,
+            generation_config=gen_config
+        )
+
+        if speed != 1.0:
+            kw["speed"] = float(speed)
+        if duration is not None and float(duration) > 0:
+            kw["duration"] = float(duration)
+
+        if voice_clone_audio:
+            kw["voice_clone_prompt"] = self.model.create_voice_clone_prompt(
+                ref_audio=voice_clone_audio,
+                ref_text=voice_clone_text,
+            )
+
+        if instruct and instruct.strip():
+            kw["instruct"] = instruct.strip()
+
+        audio = self.model.generate(**kw)
+        waveform = (audio[0] * 32767).astype(np.int16).squeeze()
+        
+        return waveform, self.sampling_rate
