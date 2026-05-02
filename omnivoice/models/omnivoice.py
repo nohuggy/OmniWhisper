@@ -38,9 +38,15 @@ from typing import Any, List, Optional, Union
 
 import numpy as np
 import torch
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchaudio
+
+# Optimization for CPU environments (like Lightning AI)
+# Prevents the AI from hogging all cores and getting stuck/killed
+torch.set_num_threads(4) 
+os.environ["PYTHON_ONLY"] = "1"
 
 try:
     from torch.nn.attention.flex_attention import create_block_mask
@@ -400,7 +406,8 @@ class OmniVoice(PreTrainedModel):
                 pipe.model.generation_config.pad_token_id = pipe.tokenizer.pad_token_id or pipe.tokenizer.eos_token_id
                 
                 # Call pipe without extra kwargs to avoid the conflict warning
-                res_list = list(pipe(fake_preprocess(None), return_timestamps=ts_arg))
+                # We add chunk_length_s=30 to ensure stable timestamping on long/short clips
+                res_list = list(pipe(fake_preprocess(None), return_timestamps=ts_arg, chunk_length_s=30))
                 res = res_list[0] if res_list else {"text": "", "chunks": []}
                 
                 if res and (isinstance(res, dict) and res.get("chunks")):
