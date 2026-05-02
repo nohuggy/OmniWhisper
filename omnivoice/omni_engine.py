@@ -78,3 +78,19 @@ class TTSEngine:
         waveform = (audio[0] * 32767).astype(np.int16).squeeze()
         
         return self.sampling_rate, waveform
+    def transcribe(self, audio_path):
+        if not audio_path or not os.path.exists(audio_path):
+            return ""
+        try:
+            # Load audio using soundfile to ensure compatibility
+            audio_data, sr = sf.read(audio_path)
+            if audio_data.ndim > 1:
+                audio_data = audio_data.mean(axis=-1)  # Convert to mono
+            
+            # Use the internal model's transcribe method
+            # This is more robust as it uses the same engine as the TTS
+            result = self.model.transcribe((audio_data, sr))
+            return result.get("text", "").strip()
+        except Exception as e:
+            print(f"Engine transcription error: {e}")
+            return f"Error: {e}"

@@ -447,12 +447,13 @@ def build_app(model_path=None, whisper_path=None):
             if not audio: return ""
             try:
                 print(f"🎙️ Transcribing reference audio: {audio}")
-                # Pipeline can take a path
-                result = WHISPER_PIPE(audio)
-                text = result.get("text", "").strip()
+                # Use the engine's transcribe method (loads via soundfile + uses model internal)
+                text = TTS_ENGINE.transcribe(audio)
                 print(f"📝 Result: {text}")
                 return text
             except Exception as e:
+                import traceback
+                traceback.print_exc()
                 print(f"❌ Transcription failed: {e}")
                 return f"Error during transcription: {e}"
 
