@@ -390,6 +390,12 @@ def build_app(model_path=None, whisper_path=None):
                         vc_text = gr.Textbox(label="Text to Synthesize", lines=5, placeholder="Enter text...")
                         vc_ref = gr.Audio(label="Reference Audio", type="filepath", elem_classes="compact-audio")
                         
+                        vc_ref_zip = gr.File(
+                            label="Upload ZIP (Audio + Text)", 
+                            file_types=[".zip"],
+                            elem_classes="compact-audio"
+                        )
+                        
                         vc_ref_text = gr.Textbox(
                             label="Reference Text", 
                             lines=2, 
@@ -397,6 +403,12 @@ def build_app(model_path=None, whisper_path=None):
                         )
                         vc_transcribe_btn = gr.Button("Transcribe Reference", variant="secondary")
 
+                        vc_instruct = gr.Textbox(
+                            label="Voice Instruction (Optional)", 
+                            placeholder="e.g. 'male, high pitch' or '男，河南话'",
+                            lines=1
+                        )
+                        
                         with gr.Accordion("Advanced Settings", open=False):
                             vc_lang = gr.Dropdown(label="Language", choices=_LANG_DISPLAY, value="Auto")
                             vc_speed = gr.Slider(0.5, 2.0, value=0.9, step=0.05, label="Speed")
@@ -418,7 +430,7 @@ def build_app(model_path=None, whisper_path=None):
                             vc_srt = gr.Textbox(show_label=False, lines=10, elem_id="vc-srt-text", interactive=False)
                         
                         vc_dl = gr.DownloadButton("📥 Download ZIP (Audio + SRT)", visible=False)
-                        vc_status = gr.Textbox(label="Status", interactive=False)
+                        vc_status = gr.Textbox(label="Status", interactive=False, lines=5)
 
             # VOICE DESIGN TAB
             with gr.TabItem("Voice Design"):
@@ -457,7 +469,7 @@ def build_app(model_path=None, whisper_path=None):
                             vd_srt = gr.Textbox(show_label=False, lines=10, elem_id="vd-srt-text", interactive=False)
                         
                         vd_dl = gr.DownloadButton("📥 Download ZIP (Audio + SRT)", visible=False)
-                        vd_status = gr.Textbox(label="Status", interactive=False)
+                        vd_status = gr.Textbox(label="Status", interactive=False, lines=5)
 
         # Event Handlers
         def transcribe_ref(audio):
@@ -475,15 +487,55 @@ def build_app(model_path=None, whisper_path=None):
                 return f"Error during transcription: {e}"
 
         def vc_handler(*args):
-            # args: text, lang, ref_audio, ref_text, steps, gs, denoise, speed, dur, pp, po, gen_srt
-            return generate_core(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9], args[10], "clone", args[11])
+            # args: text, lang, ref_audio, ref_text, instruct, steps, gs, denoise, speed, dur, pp, po, gen_srt
+            # Mapping:
+            # 0:text, 1:lang, 2:ref_audio, 3:ref_text, 4:instruct, 5:steps, 6:gs, 7:denoise, 8:speed, 9:dur, 10:pp, 11:po, 12:gen_srt
+            return generate_core(
+                text=args[0], 
+                language=args[1], 
+                ref_audio=args[2], 
+                ref_text=args[3], 
+                instruct=args[4], 
+                num_step=args[5], 
+                guidance=args[6], 
+                denoise=args[7], 
+                speed=args[8], 
+                duration=args[9], 
+                pp=args[10], 
+                po=args[11], 
+                mode="clone", 
+                gen_srt=args[12]
+            )
+            
+        def process_ref_zip(zip_file):
+            if not zip_file: return None, ""
+            import zipfile, tempfile
+            audio_path = None
+            text_content = ""
+            tmp = tempfile.mkdtemp()
+            with zipfile.ZipFile(zip_file.name, 'r') as z:
+                z.extractall(tmp)
+                for f in z.namelist():
+                    if f.endswith(('.wav', '.mp3', '.flac')):
+                        audio_path = os.path.join(tmp, f)
+                    if f.endswith('.txt'):
+                        with open(os.path.join(tmp, f), 'r', encoding='utf-8') as tf:
+                            text_content = tf.read()
+            return audio_path, text_content
+            
+        # Smart Reference Handler
+        vc_ref_zip.change(
+            process_ref_zip,
+            inputs=[vc_ref_zip],
+            outputs=[vc_ref, vc_ref_text]
+        )
             
         # Transcription events (Manual only)
         vc_transcribe_btn.click(transcribe_ref, inputs=[vc_ref], outputs=[vc_ref_text])
 
         vc_btn.click(
             vc_handler,
-            inputs=[vc_text, vc_lang, vc_ref, vc_ref_text, vc_steps, vc_gs, vc_dn, vc_speed, vc_dur, vc_pp, vc_po, vc_gen_srt],
+            inputs=[vc_text, vc_lang, vc_ref, vc_ref_text, vc_instruct, vc_steps, vc_gs, vc_dn, vc_speed, vc_dur, vc_pp, vc_po, vc_gen_srt],
             outputs=[vc_audio, vc_srt, vc_dl, vc_status]
         ).then(lambda dl: gr.update(visible=True, value=dl), inputs=[vc_dl], outputs=[vc_dl])
 
