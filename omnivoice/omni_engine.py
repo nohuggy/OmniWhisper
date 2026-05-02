@@ -88,9 +88,12 @@ class TTSEngine:
                 audio_data = audio_data.mean(axis=-1)  # Convert to mono
             
             # Use the internal model's transcribe method
-            # This is more robust as it uses the same engine as the TTS
             result = self.model.transcribe((audio_data, sr))
-            return result.get("text", "").strip()
+            
+            # Handle both dictionary (with timestamps) and raw string results
+            if isinstance(result, dict):
+                return result.get("text", "").strip()
+            return str(result).strip()
         except Exception as e:
             print(f"Engine transcription error: {e}")
             return f"Error: {e}"

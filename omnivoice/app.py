@@ -293,6 +293,13 @@ def text_to_srt_whisper(text, audio_tuple, pipe, language="zh"):
                 if end_time is None: end_time = start_time + 1.0
                 srt_output += f"{i}\n{format_timestamp(start_time)} --> {format_timestamp(end_time)}\n{seg_text}\n\n"
         
+        # Convert to Simplified Chinese
+        try:
+            from opencc import OpenCC
+            cc = OpenCC('t2s')
+            srt_output = cc.convert(srt_output)
+        except: pass
+
         return srt_output.strip()
     except Exception as e:
         return f"SRT Error: {e}"
