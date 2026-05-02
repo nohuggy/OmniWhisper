@@ -2,23 +2,6 @@
 
 OmniWhisper is a production-grade **Text-to-Speech (TTS)** and **SRT Generation** pipeline specifically optimized for deployment on **Lightning.ai**. It integrates the high-fidelity voice cloning of OmniVoice with the robust, millisecond-accurate alignment of Whisper-Large-v3-Turbo.
 
-## 📂 Project Structure
-
-```text
-OmniWhisper/
-├── README.md               # Project documentation
-├── requirements.txt        # Shared dependencies
-├── setup_lightning.sh      # Master Setup Script (Root)
-├── boot.sh                 # Master Boot Script (Root)
-├── omnivoice/              # Core Library & Application
-│   ├── app.py              # Master WebUI
-│   ├── omni_engine.py      # TTS Engine Interface
-│   └── resources/          # OmniVoice weights & config
-└── whisper-large-v3-turbo/ # Whisper Engine & Calibration
-    ├── whisper_engine.py   # Whisper Alignment Interface
-    └── ...                 
-```
-
 ## 🚀 Installation & Launch (Lightning.ai)
 
 ### 1. New Installation
