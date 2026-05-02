@@ -359,8 +359,11 @@ def generate_core(text, language, ref_audio, instruct, num_step, guidance, denoi
 def build_app(model_path=None, whisper_path=None):
     load_engines(model_path, whisper_path)
     
-    with gr.Blocks(theme=gr.themes.Soft(), css=CSS, title="OmniVoice Pro") as demo:
-        gr.Markdown("# OmniVoice Pro — Advanced TTS & Subtitles")
+def build_app(model_path=None, whisper_path=None):
+    load_engines(model_path, whisper_path)
+    
+    with gr.Blocks(theme=gr.themes.Soft(), css=CSS, title="OmniWhisper") as demo:
+        gr.Markdown("# OmniWhisper")
         
         with gr.Tabs():
             # VOICE CLONE TAB
@@ -373,7 +376,7 @@ def build_app(model_path=None, whisper_path=None):
                         vc_ref_text = gr.Textbox(
                             label="Reference Text", 
                             lines=2, 
-                            placeholder="Transcript of reference audio. Click 'Transcribe' or wait for auto-transcribe."
+                            placeholder="Transcript of reference audio. Click 'Transcribe' to process."
                         )
                         vc_transcribe_btn = gr.Button("Transcribe Reference", variant="secondary")
 
@@ -442,18 +445,22 @@ def build_app(model_path=None, whisper_path=None):
         # Event Handlers
         def transcribe_ref(audio):
             if not audio: return ""
-            print(f"🎙️ Auto-transcribing reference audio...")
-            result = WHISPER_PIPE(audio)
-            text = result.get("text", "").strip()
-            print(f"📝 Transcription: {text}")
-            return text
+            try:
+                print(f"🎙️ Transcribing reference audio: {audio}")
+                # Pipeline can take a path
+                result = WHISPER_PIPE(audio)
+                text = result.get("text", "").strip()
+                print(f"📝 Result: {text}")
+                return text
+            except Exception as e:
+                print(f"❌ Transcription failed: {e}")
+                return f"Error during transcription: {e}"
 
         def vc_handler(*args):
             # args: text, lang, ref_audio, ref_text, steps, gs, denoise, speed, dur, pp, po, gen_srt
             return generate_core(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9], args[10], "clone", args[11])
             
-        # Transcription events
-        vc_ref.change(transcribe_ref, inputs=[vc_ref], outputs=[vc_ref_text])
+        # Transcription events (Manual only)
         vc_transcribe_btn.click(transcribe_ref, inputs=[vc_ref], outputs=[vc_ref_text])
 
         vc_btn.click(
