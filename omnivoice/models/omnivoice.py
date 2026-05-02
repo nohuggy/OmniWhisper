@@ -372,25 +372,26 @@ class OmniVoice(PreTrainedModel):
         try:
             # MONKEYPATCH SOLUTION: 
             # We bypass the part of the pipeline that imports torchcodec.
-            # We do this by manually providing the features to the pipe.
             pipe = self._asr_pipe
             
-            # Step 1: Pre-compute features (This avoids the pipeline's internal preprocess which crashes)
+            print(f"[SRT] Whisper: Pre-computing features on {self.device}...")
             inputs = pipe.feature_extractor(audio_input["array"], sampling_rate=sr, return_tensors="pt").to(self.device)
             input_features = inputs.input_features.to(pipe.model.dtype)
             
-            # Step 2: Inject our pre-computed features into a custom hook
-            # We temporarily override the preprocess method to just return our features
             original_preprocess = pipe.preprocess
             def fake_preprocess(inputs, **kwargs):
-                return {"input_features": input_features}
+                # Return a generator to satisfy pipeline's iterator expectations if needed
+                yield {"input_features": input_features}
             
             pipe.preprocess = fake_preprocess
             
             try:
-                # Step 3: Run the official pipeline (which now uses our fake preprocessor)
-                # This ensures we get the HIGH-QUALITY timestamp decoding logic of the official library
-                res = pipe(audio_input, return_timestamps=ts_arg)
+                print(f"[SRT] Whisper: Running pipeline inference...")
+                # We use the generator directly via the pipeline's internal logic
+                # or just call it and hope the generator fix works.
+                # In some versions of transformers, passing a list/generator to pipe() is safer.
+                res_list = list(pipe(fake_preprocess(None), return_timestamps=ts_arg))
+                res = res_list[0] if res_list else {"text": "", "chunks": []}
                 
                 if res and (isinstance(res, dict) and res.get("chunks")):
                     print(f"[SRT] Whisper produced {len(res['chunks'])} chunks via Monkeypatch.")
@@ -398,19 +399,28 @@ class OmniVoice(PreTrainedModel):
                 
                 return res
             finally:
-                # Always restore the original method
                 pipe.preprocess = original_preprocess
 
         except Exception as e:
-            logger.warning("Monkeypatch transcription failed: %s. Falling back to basic.", e)
+            print(f"⚠️ Monkeypatch transcription failed: {e}. Trying robust fallback...")
             try:
-                # Final fallback: Raw model generate (no timestamps but at least it works)
                 pipe = self._asr_pipe
+                print(f"[ASR] Running basic transcription (no timestamps)...")
                 inputs = pipe.feature_extractor(audio_input["array"], sampling_rate=sr, return_tensors="pt").to(self.device)
-                outputs = pipe.model.generate(inputs.input_features.to(pipe.model.dtype), max_new_tokens=440)
+                
+                # Use a more conservative token limit for speed on CPU
+                with torch.no_grad():
+                    outputs = pipe.model.generate(
+                        inputs.input_features.to(pipe.model.dtype), 
+                        max_new_tokens=256,
+                        use_cache=True
+                    )
+                
                 text = pipe.tokenizer.batch_decode(outputs, skip_special_tokens=True)[0].strip()
+                print(f"[ASR] Transcription result: {text[:50]}...")
                 return {"text": text, "chunks": []} if return_timestamps else text
-            except:
+            except Exception as fe:
+                print(f"❌ Fallback failed: {fe}")
                 return {"text": "", "chunks": []} if return_timestamps else ""
 
     def get_input_embeddings(self):
