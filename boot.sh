@@ -50,9 +50,19 @@ else
     echo "✅ Whisper model found at $WHISPER_DIR"
 fi
 
-# 5. Launch the WebUI with Public Sharing
+# 5. Ensure dependencies are satisfied
+echo "📦 Checking dependencies..."
+python3 -m pip install -q opencc-python-reimplemented
+
+# 6. Launch the WebUI
 echo "🌐 Launching WebUI..."
 # Ensure current directory is in PYTHONPATH for module resolution
 export PYTHONPATH=$PYTHONPATH:.
+
 # We point to the local folder for the model
+echo -e "\033[94m--------------------------------------------------\033[0m"
+echo -e "\033[94m🚀 OmniWhisper WebUI starting...\033[0m"
+echo -e "\033[94m🔗 Access your app below:\033[0m"
+echo -e "\033[94m--------------------------------------------------\033[0m"
+
 python3 omnivoice/app.py --model "./omnivoice/resources" --whisper "$WHISPER_DIR" --share

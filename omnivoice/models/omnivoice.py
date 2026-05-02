@@ -400,6 +400,8 @@ class OmniVoice(PreTrainedModel):
                 
                 # Update model's generation config to avoid deprecation warnings
                 pipe.model.generation_config.task = "transcribe"
+                pipe.model.generation_config.language = "zh"
+                pipe.model.generation_config.initial_prompt = "以下是简体中文。"
                 pipe.model.generation_config.num_beams = 1
                 pipe.model.generation_config.repetition_penalty = 1.2
                 pipe.model.generation_config.no_repeat_ngram_size = 3
