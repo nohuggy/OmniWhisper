@@ -390,26 +390,24 @@ def build_app(model_path=None, whisper_path=None):
                         vc_text = gr.Textbox(label="Text to Synthesize", lines=5, placeholder="Enter text...")
                         vc_ref = gr.Audio(label="Reference Audio", type="filepath", elem_classes="compact-audio")
                         
-                        vc_ref_zip = gr.File(
-                            label="Upload ZIP (Audio + Text)", 
-                            file_types=[".zip"],
-                            elem_classes="compact-audio"
-                        )
-                        
                         vc_ref_text = gr.Textbox(
                             label="Reference Text", 
                             lines=2, 
                             placeholder="Transcript of reference audio. Click 'Transcribe' to process."
                         )
-                        vc_transcribe_btn = gr.Button("Transcribe Reference", variant="secondary")
-
-                        vc_instruct = gr.Textbox(
-                            label="Voice Instruction (Optional)", 
-                            placeholder="e.g. 'male, high pitch' or '男，河南话'",
-                            lines=1
-                        )
                         
+                        with gr.Row():
+                            vc_transcribe_btn = gr.Button("Transcribe Reference", variant="secondary")
+                            vc_ref_zip_btn = gr.UploadButton("Upload Ref Zip", file_types=[".zip"], variant="secondary")
+                            vc_ref_txt_btn = gr.UploadButton("Upload Ref Txt", file_types=[".txt"], variant="secondary")
+
                         with gr.Accordion("Advanced Settings", open=False):
+                            vc_instruct = gr.Textbox(
+                                label="Voice Instruction", 
+                                placeholder="e.g. 'male, high pitch' or '男，河南话'",
+                                lines=1
+                            )
+
                             vc_lang = gr.Dropdown(label="Language", choices=_LANG_DISPLAY, value="Auto")
                             vc_speed = gr.Slider(0.5, 2.0, value=0.9, step=0.05, label="Speed")
                             vc_dur = gr.Number(label="Fixed Duration (sec)", value=0)
@@ -518,16 +516,36 @@ def build_app(model_path=None, whisper_path=None):
                 for f in z.namelist():
                     if f.endswith(('.wav', '.mp3', '.flac')):
                         audio_path = os.path.join(tmp, f)
-                    if f.endswith('.txt'):
-                        with open(os.path.join(tmp, f), 'r', encoding='utf-8') as tf:
-                            text_content = tf.read()
+                    if f.endswith('.txt') and not f.startswith('__MACOSX') and not os.path.basename(f).startswith('.'):
+                        txt_path = os.path.join(tmp, f)
+                        try:
+                            with open(txt_path, 'r', encoding='utf-8') as tf:
+                                text_content = tf.read()
+                        except UnicodeDecodeError:
+                            with open(txt_path, 'r', encoding='gbk') as tf:
+                                text_content = tf.read()
             return audio_path, text_content
             
-        # Smart Reference Handler
-        vc_ref_zip.change(
+        def process_ref_txt(txt_file):
+            if not txt_file: return ""
+            try:
+                with open(txt_file.name, 'r', encoding='utf-8') as tf:
+                    return tf.read()
+            except UnicodeDecodeError:
+                with open(txt_file.name, 'r', encoding='gbk') as tf:
+                    return tf.read()
+            
+        # Smart Reference Handlers
+        vc_ref_zip_btn.upload(
             process_ref_zip,
-            inputs=[vc_ref_zip],
+            inputs=[vc_ref_zip_btn],
             outputs=[vc_ref, vc_ref_text]
+        )
+        
+        vc_ref_txt_btn.upload(
+            process_ref_txt,
+            inputs=[vc_ref_txt_btn],
+            outputs=[vc_ref_text]
         )
             
         # Transcription events (Manual only)
