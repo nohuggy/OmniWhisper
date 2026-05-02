@@ -14,12 +14,15 @@ project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if project_root not in sys.path:
     sys.path.append(project_root)
 
-# Add whisper folder to path for import
+# Add paths for engine imports
+current_dir = os.path.dirname(os.path.abspath(__file__))
 whisper_root = os.path.join(project_root, "whisper-large-v3-turbo")
-if whisper_root not in sys.path:
-    sys.path.append(whisper_root)
 
-from .omni_engine import TTSEngine, get_slug
+for p in [current_dir, whisper_root]:
+    if p not in sys.path:
+        sys.path.append(p)
+
+from omni_engine import TTSEngine, get_slug
 from whisper_engine import format_timestamp, smart_balanced_split, align_robust
 from transformers import pipeline
 
