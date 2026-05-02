@@ -31,7 +31,7 @@ cd OmniWhisper && bash setup_lightning.sh
 ### 2. Launch WebUI
 After setup, use the master boot script to start the server:
 ```bash
-bash boot.sh
+cd OmniWhisper && bash boot.sh
 ```
 
 > [!NOTE]
