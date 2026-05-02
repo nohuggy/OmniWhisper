@@ -377,24 +377,27 @@ class OmniVoice(PreTrainedModel):
             print(f"[SRT] Whisper: Pre-computing features on {self.device}...")
             inputs = pipe.feature_extractor(audio_input["array"], sampling_rate=sr, return_tensors="pt").to(self.device)
             input_features = inputs.input_features.to(pipe.model.dtype)
+            attn_mask = inputs.get("attention_mask")
             
             original_preprocess = pipe.preprocess
             def fake_preprocess(inputs, **kwargs):
                 # Return a generator to satisfy pipeline's iterator expectations
-                # Added 'is_last': True to fix the pipeline iteration crash
-                yield {"input_features": input_features, "is_last": True}
+                out = {"input_features": input_features, "is_last": True}
+                if attn_mask is not None:
+                    out["attention_mask"] = attn_mask
+                yield out
             
             pipe.preprocess = fake_preprocess
             
             try:
                 print(f"[SRT] Whisper: Running pipeline inference...")
                 # Force task and use greedy decoding (num_beams=1) for speed/stability
-                # Added repetition_penalty and no_repeat_ngram_size to prevent "forever" loops
                 gen_kwargs = {
                     "task": "transcribe",
                     "num_beams": 1,
                     "repetition_penalty": 1.2,
-                    "no_repeat_ngram_size": 3
+                    "no_repeat_ngram_size": 3,
+                    "pad_token_id": pipe.tokenizer.pad_token_id or pipe.tokenizer.eos_token_id
                 }
                 
                 # Passing a generator to pipe() is the officially supported way to stream preprocessed data
