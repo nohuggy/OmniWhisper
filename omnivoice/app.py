@@ -41,11 +41,23 @@ def load_engines(model_path=None, whisper_path=None):
     if whisper_path is None:
         whisper_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "whisper-large-v3-turbo")
 
+    # 1. Handle OmniVoice TTS Model
+    if not os.path.exists(model_path) or not any(f.endswith(('.bin', '.safetensors')) for f in os.listdir(model_path) if os.path.isfile(os.path.join(model_path, f))):
+        print(f"📥 OmniVoice model weights not found in {model_path}. Downloading from HuggingFace...")
+        from huggingface_hub import snapshot_download
+        snapshot_download(
+            repo_id="k2-fsa/OmniVoice",
+            local_dir=model_path,
+            local_dir_use_symlinks=False
+        )
+        print("✅ OmniVoice weights downloaded successfully.")
+
     if TTS_ENGINE is None:
         TTS_ENGINE = TTSEngine(model_path)
     
+    # 2. Handle Whisper Model
     if WHISPER_PIPE is None:
-        if not os.path.exists(whisper_path) or not os.listdir(whisper_path):
+        if not os.path.exists(whisper_path) or not any(f.endswith(('.bin', '.safetensors', '.pt')) for f in os.listdir(whisper_path) if os.path.isfile(os.path.join(whisper_path, f))):
             print(f"📥 Whisper model not found at {whisper_path}. Downloading from HuggingFace...")
             from huggingface_hub import snapshot_download
             snapshot_download(
