@@ -291,7 +291,7 @@ def text_to_srt_whisper(text, audio_tuple, pipe, language="zh"):
     except Exception as e:
         return f"SRT Error: {e}"
 
-def generate_core(text, language, ref_audio, instruct, num_step, guidance, denoise, speed, duration, pp, po, mode):
+def generate_core(text, language, ref_audio, instruct, num_step, guidance, denoise, speed, duration, pp, po, mode, gen_srt=True):
     if not text or not text.strip():
         return None, "", None, "Text is required."
     
@@ -325,16 +325,22 @@ def generate_core(text, language, ref_audio, instruct, num_step, guidance, denoi
         sf.write(audio_path, waveform, sampling_rate)
         
         # SRT
-        srt_content = text_to_srt_whisper(text, audio_tuple, WHISPER_PIPE)
-        srt_path = audio_path.replace(".wav", ".srt")
-        with open(srt_path, "w", encoding="utf-8") as f:
-            f.write(srt_content)
+        srt_content = ""
+        zip_path = None
+        if gen_srt:
+            srt_content = text_to_srt_whisper(text, audio_tuple, WHISPER_PIPE)
+            srt_path = audio_path.replace(".wav", ".srt")
+            with open(srt_path, "w", encoding="utf-8") as f:
+                f.write(srt_content)
             
-        # ZIP
-        zip_path = os.path.join(temp_dir, f"{slug}.zip")
-        with zipfile.ZipFile(zip_path, "w") as zipf:
-            zipf.write(audio_path, arcname=f"{slug}.wav")
-            zipf.write(srt_path, arcname=f"{slug}.srt")
+            # ZIP
+            zip_path = os.path.join(temp_dir, f"{slug}.zip")
+            with zipfile.ZipFile(zip_path, "w") as zipf:
+                zipf.write(audio_path, arcname=f"{slug}.wav")
+                zipf.write(srt_path, arcname=f"{slug}.srt")
+        else:
+            # If no SRT, download is just the WAV
+            zip_path = audio_path
             
         return audio_path, srt_content, zip_path, status_msg
     except Exception as e:
@@ -373,8 +379,9 @@ def build_app(model_path=None, whisper_path=None):
                             vc_steps = gr.Slider(4, 64, value=32, step=4, label="Inference Steps")
                             vc_gs = gr.Slider(0, 5, value=0.5, step=0.1, label="Guidance Scale")
                             vc_dn = gr.Checkbox(label="Denoise", value=True)
-                            vc_pp = gr.Checkbox(label="Preprocess Ref (Silence Removal)", value=True)
-                            vc_po = gr.Checkbox(label="Postprocess Output (Trim Silences)", value=True)
+                            vc_pp = gr.Checkbox(label="Clean Ref Audio (Silence Removal)", value=True)
+                            vc_po = gr.Checkbox(label="Trim Output Silence", value=True)
+                            vc_gen_srt = gr.Checkbox(label="Generate Subtitles (SRT)", value=True)
                             
                         vc_btn = gr.Button("Generate Voice", variant="primary")
                         
@@ -412,7 +419,8 @@ def build_app(model_path=None, whisper_path=None):
                             vd_steps = gr.Slider(4, 64, value=32, step=4, label="Inference Steps")
                             vd_gs = gr.Slider(0, 5, value=0.5, step=0.1, label="Guidance Scale")
                             vd_dn = gr.Checkbox(label="Denoise", value=True)
-                            vd_po = gr.Checkbox(label="Postprocess Output", value=True)
+                            vd_po = gr.Checkbox(label="Trim Output Silence", value=True)
+                            vd_gen_srt = gr.Checkbox(label="Generate Subtitles (SRT)", value=True)
 
                         vd_btn = gr.Button("Create Voice", variant="primary")
 
@@ -430,16 +438,14 @@ def build_app(model_path=None, whisper_path=None):
         def transcribe_ref(audio):
             if not audio: return ""
             print(f"🎙️ Auto-transcribing reference audio...")
-            # Reuse the shared WHISPER_PIPE
-            # Note: pipeline handles file paths directly
             result = WHISPER_PIPE(audio)
             text = result.get("text", "").strip()
             print(f"📝 Transcription: {text}")
             return text
 
         def vc_handler(*args):
-            # args: text, lang, ref_audio, ref_text, steps, gs, denoise, speed, dur, pp, po
-            return generate_core(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9], args[10], "clone")
+            # args: text, lang, ref_audio, ref_text, steps, gs, denoise, speed, dur, pp, po, gen_srt
+            return generate_core(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9], args[10], "clone", args[11])
             
         # Transcription events
         vc_ref.change(transcribe_ref, inputs=[vc_ref], outputs=[vc_ref_text])
@@ -447,17 +453,17 @@ def build_app(model_path=None, whisper_path=None):
 
         vc_btn.click(
             vc_handler,
-            inputs=[vc_text, vc_lang, vc_ref, vc_ref_text, vc_steps, vc_gs, vc_dn, vc_speed, vc_dur, vc_pp, vc_po],
+            inputs=[vc_text, vc_lang, vc_ref, vc_ref_text, vc_steps, vc_gs, vc_dn, vc_speed, vc_dur, vc_pp, vc_po, vc_gen_srt],
             outputs=[vc_audio, vc_srt, vc_dl, vc_status]
         ).then(lambda dl: gr.update(visible=True, value=dl), inputs=[vc_dl], outputs=[vc_dl])
 
-        def vd_handler(text, lang, speed, dur, steps, gs, dn, po, *groups):
+        def vd_handler(text, lang, speed, dur, steps, gs, dn, po, gen_srt, *groups):
             instruct = ", ".join([g for g in groups if g != "Auto"])
-            return generate_core(text, lang, None, instruct, steps, gs, dn, speed, dur, False, po, "design")
+            return generate_core(text, lang, None, instruct, steps, gs, dn, speed, dur, False, po, "design", gen_srt)
 
         vd_btn.click(
             vd_handler,
-            inputs=[vd_text, vd_lang, vd_speed, vd_dur, vd_steps, vd_gs, vd_dn, vd_po] + vd_groups,
+            inputs=[vd_text, vd_lang, vd_speed, vd_dur, vd_steps, vd_gs, vd_dn, vd_po, vd_gen_srt] + vd_groups,
             outputs=[vd_audio, vd_srt, vd_dl, vd_status]
         ).then(lambda dl: gr.update(visible=True, value=dl), inputs=[vd_dl], outputs=[vd_dl])
 
