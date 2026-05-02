@@ -1,47 +1,50 @@
-# 🎙️ OmniWhisper: Precision TTS & Whisper-Large-v3-Turbo Alignment
+# 🎙️ OmniWhisper (Optimized for Lightning.ai)
 
-OmniWhisper is a production-grade **Text-to-Speech (TTS)** and **SRT Generation** pipeline. It merges the high-fidelity voice cloning of **OmniVoice** with the robust, millisecond-accurate alignment of **Whisper-Large-v3-Turbo**.
-
-## ✨ Key Features
-
-- **🗣️ Zero-Shot Voice Cloning**: Clone any voice with high fidelity.
-- **⏱️ Whisper-Large-v3-Turbo SRT**: Millisecond-accurate subtitle generation using Whisper's word-level timestamps instead of CTC.
-- **🎵 Lyrics Scrolling**: Real-time subtitle preview in the WebUI.
-- **📦 Zip Download**: One-click download of synchronized WAV and SRT pairs.
-- **⚡ Lightning.ai Optimized**: Designed for high-performance cloud environments.
+OmniWhisper is a production-grade **Text-to-Speech (TTS)** and **SRT Generation** pipeline specifically optimized for deployment on **Lightning.ai**. It integrates the high-fidelity voice cloning of OmniVoice with the robust, millisecond-accurate alignment of Whisper-Large-v3-Turbo.
 
 ## 📂 Project Structure
 
+The repository is organized for a clean root environment:
+
 ```text
 OmniWhisper/
-├── app.py                  # Main WebUI entry point
-├── tts_engine.py           # TTS Generation Logic
-├── whisper_engine.py       # Whisper SRT Alignment Logic
-├── whisper-large-v3-turbo/ # Local Whisper weights
-├── omnivoice/              # Core OmniVoice library
-└── README.md
+├── README.md               # Project documentation
+├── requirements.txt        # Shared dependencies
+├── omnivoice/              # Core Library & Application
+│   ├── app.py              # Master WebUI (Lightning.ai Entry Point)
+│   ├── omni_engine.py      # TTS Engine Interface
+│   ├── resources/          # OmniVoice weights & config
+│   ├── boot.sh / setup.sh  # Deployment scripts
+│   └── ...                 
+└── whisper-large-v3-turbo/ # Whisper Engine & Calibration
+    ├── whisper_engine.py   # Whisper Alignment Interface
+    ├── Whisper ASR Mapping and Calibration.md # User Calibration Notes
+    └── ...                 
 ```
 
-## 🚀 Quick Start
+## 🚀 Quick Start (Lightning.ai)
 
-### 1. Installation
+### 1. Environment Setup
+Run the setup script inside the `omnivoice` folder to install dependencies:
 ```bash
-pip install -r requirements.txt
+cd omnivoice && bash setup.sh
 ```
 
 ### 2. Launch WebUI
+Use the master boot script to start the server:
 ```bash
-python3 app.py --model . --whisper ./whisper-large-v3-turbo --share
+bash boot.sh
 ```
+
 > [!NOTE]
-> The whisper model is excluded from the repository. On the first run, the system will automatically download `whisper-large-v3-turbo` (approx 1.6GB) from HuggingFace to the `./whisper-large-v3-turbo` folder.
+> This setup is optimized for **Lightning.ai**. It automatically handles model pre-caching and ensures the environment is cleared of hung processes before launch.
 
-## 🛠️ Components
+## ✨ Key Features
+- **🗣️ Zero-Shot Voice Cloning**: High-fidelity cloning via OmniVoice.
+- **⏱️ Whisper SRT Alignment**: Millisecond-accurate word mapping using Whisper-Large-v3-Turbo.
+- **🎵 Lyrics Scrolling**: Real-time subtitle synchronization in the WebUI.
+- **📦 ZIP Packaging**: Integrated packaging of WAV and SRT outputs.
 
-- **TTS Engine**: Handles voice cloning and speech synthesis.
-- **SRT Engine**: Uses `whisper-large-v3-turbo` for robust non-overlapping alignment, especially effective for mixed-language content.
-- **WebUI**: Enhanced with real-time lyrics scrolling and automatic ZIP packaging.
-
-## 📜 Credits
+## 🛠️ Credits
 Powered by **OmniVoice** and **OpenAI Whisper**.
-Mapping & Calibration logic optimized for production-grade subtitle synchronization.
+Custom calibration logic by **nohuggy**.
