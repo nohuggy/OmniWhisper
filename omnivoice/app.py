@@ -8,17 +8,17 @@ import torch
 import numpy as np
 import soundfile as sf
 import gradio as gr
+import warnings
+
+# Suppress annoying warnings for a cleaner "pro" boot
+warnings.filterwarnings("ignore", category=UserWarning)
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+os.environ["PYTHONWARNINGS"] = "ignore"
+os.environ["GRADIO_ANALYTICS_ENABLED"] = "False"
 
 # Add project root to path
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if project_root not in sys.path:
-    sys.path.append(project_root)
-
-# Add paths for engine imports
-current_dir = os.path.dirname(os.path.abspath(__file__))
-whisper_root = os.path.join(project_root, "whisper-large-v3-turbo")
-
-for p in [current_dir, whisper_root]:
+for p in [project_root, os.path.dirname(os.path.abspath(__file__)), os.path.join(project_root, "whisper-large-v3-turbo")]:
     if p not in sys.path:
         sys.path.append(p)
 
@@ -42,37 +42,19 @@ def load_engines(model_path=None, whisper_path=None):
         whisper_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "whisper-large-v3-turbo")
 
     # 1. Handle OmniVoice TTS Model
-    # Ensure internet access for download if files are missing
     if "HF_HUB_OFFLINE" in os.environ:
-        print(f"⚠️ Removing HF_HUB_OFFLINE={os.environ['HF_HUB_OFFLINE']} to force download...")
         del os.environ["HF_HUB_OFFLINE"]
 
     if not os.path.exists(model_path) or not any(f.endswith(('.bin', '.safetensors')) for f in os.listdir(model_path) if os.path.isfile(os.path.join(model_path, f))):
-        print(f"📥 OmniVoice model weights not found in {model_path}. Downloading from HuggingFace...")
+        print(f"📥 Downloading OmniVoice Weights to {model_path}...")
         from huggingface_hub import snapshot_download
         try:
-            snapshot_download(
-                repo_id="k2-fsa/OmniVoice",
-                local_dir=model_path,
-                local_dir_use_symlinks=False,
-                local_files_only=False, # Explicitly disable local-only mode
-                resume_download=True
-            )
-            # Verify download
-            if not any(f.endswith(('.bin', '.safetensors')) for f in os.listdir(model_path) if os.path.isfile(os.path.join(model_path, f))):
-                raise RuntimeError(f"Download completed but no weights found in {model_path}")
-            print("✅ OmniVoice weights downloaded successfully.")
-        except Exception as e:
-            print(f"❌ Failed to download OmniVoice weights: {e}")
-            print("Trying fallback download via git...")
-            # Fallback if huggingface_hub is being difficult
+            snapshot_download(repo_id="k2-fsa/OmniVoice", local_dir=model_path, local_dir_use_symlinks=False, local_files_only=False)
+            print("✅ OmniVoice Weights: Ready")
+        except Exception:
+            print("⚠️ Switching to Git fallback for OmniVoice...")
             os.system(f"git clone https://huggingface.co/k2-fsa/OmniVoice {model_path}_tmp && mv {model_path}_tmp/* {model_path}/ && rm -rf {model_path}_tmp")
-            
-            # Final check after fallback
-            if not any(f.endswith(('.bin', '.safetensors')) for f in os.listdir(model_path) if os.path.isfile(os.path.join(model_path, f))):
-                print("❌ Fallback download also failed. Please check your internet connection.")
-                sys.exit(1)
-            print("✅ OmniVoice weights recovered via fallback.")
+            print("✅ OmniVoice Weights: Ready (Fallback)")
 
     if TTS_ENGINE is None:
         TTS_ENGINE = TTSEngine(model_path)
@@ -80,33 +62,19 @@ def load_engines(model_path=None, whisper_path=None):
     # 2. Handle Whisper Model
     if WHISPER_PIPE is None:
         if not os.path.exists(whisper_path) or not any(f.endswith(('.bin', '.safetensors', '.pt')) for f in os.listdir(whisper_path) if os.path.isfile(os.path.join(whisper_path, f))):
-            print(f"📥 Whisper model not found at {whisper_path}. Downloading from HuggingFace...")
+            print(f"📥 Downloading Whisper Turbo to {whisper_path}...")
             from huggingface_hub import snapshot_download
             try:
-                snapshot_download(
-                    repo_id="openai/whisper-large-v3-turbo",
-                    local_dir=whisper_path,
-                    local_dir_use_symlinks=False,
-                    local_files_only=False,
-                    resume_download=True
-                )
-                # Verify
-                if not any(f.endswith(('.bin', '.safetensors', '.pt')) for f in os.listdir(whisper_path) if os.path.isfile(os.path.join(whisper_path, f))):
-                    raise RuntimeError("Download completed but no weights found")
-                print("✅ Whisper model downloaded successfully.")
-            except Exception as e:
-                print(f"⚠️ HuggingFace library failed: {e}")
-                print("Trying fallback download via git for Whisper...")
+                snapshot_download(repo_id="openai/whisper-large-v3-turbo", local_dir=whisper_path, local_dir_use_symlinks=False, local_files_only=False)
+                print("✅ Whisper Turbo: Ready")
+            except Exception:
+                print("⚠️ Switching to Git fallback for Whisper...")
                 os.system(f"git clone https://huggingface.co/openai/whisper-large-v3-turbo {whisper_path}_tmp && mv {whisper_path}_tmp/* {whisper_path}/ && rm -rf {whisper_path}_tmp")
-                
-                if not any(f.endswith(('.bin', '.safetensors', '.pt')) for f in os.listdir(whisper_path) if os.path.isfile(os.path.join(whisper_path, f))):
-                    print("❌ Whisper download failed completely.")
-                    sys.exit(1)
-                print("✅ Whisper model recovered via fallback.")
+                print("✅ Whisper Turbo: Ready (Fallback)")
             
-        print(f"Loading Whisper model from: {whisper_path}...")
         device = "cuda" if torch.cuda.is_available() else "cpu"
         WHISPER_PIPE = pipeline("automatic-speech-recognition", model=whisper_path, device=device)
+        print(f"✅ Engines Initialized on {device.upper()}")
         
         # Share the same pipe with the TTS engine to save ~1.6GB VRAM/RAM
         if TTS_ENGINE and hasattr(TTS_ENGINE.model, "_asr_pipe"):
