@@ -99,7 +99,17 @@ _CATEGORIES = {
     "Chinese Dialect / 中文方言": ["Northeast Dialect / 东北话", "Sichuan Dialect / 四川话", "Henan Dialect / 河南话", "Shaanxi Dialect / 陕西话"],
 }
 
-_LANG_DISPLAY = ["Auto", "Chinese", "English", "Japanese", "Korean", "French", "German", "Spanish"]
+from omnivoice.utils.lang_map import LANG_NAMES, lang_display_name
+_LANG_DISPLAY = ["Auto"] + sorted(lang_display_name(n) for n in LANG_NAMES)
+
+_CATEGORIES = {
+    "Gender": ["Male", "Female"],
+    "Age": ["Child", "Teenager", "Young adult", "Middle-aged", "Elderly"],
+    "Pitch": ["Very low pitch", "Low pitch", "Moderate pitch", "High pitch", "Very high pitch"],
+    "Style": ["Whisper"],
+    "Accent": ["American accent", "British accent", "Australian accent", "Chinese accent", "Canadian accent", "Indian accent", "Korean accent", "Portuguese accent", "Russian accent", "Japanese accent"],
+    "Dialect": ["东北话", "四川话", "河南话", "陕西话", "贵州话", "云南话", "桂林话", "济南话", "石家庄话", "甘肃话", "宁夏话", "青岛话"],
+}
 
 CSS = """
 .gradio-container {max-width: 100% !important; font-size: 16px !important;}

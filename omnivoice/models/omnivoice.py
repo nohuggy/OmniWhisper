@@ -430,7 +430,8 @@ class OmniVoice(PreTrainedModel):
                         from opencc import OpenCC
                         cc = OpenCC('t2s')
                         res["text"] = cc.convert(res["text"])
-                    except: pass
+                    except Exception as ecc:
+                        print(f"[SRT] OpenCC string conversion failed: {ecc}")
                     return res["text"]
                 
                 return res
