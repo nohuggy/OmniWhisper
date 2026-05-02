@@ -388,10 +388,12 @@ class OmniVoice(PreTrainedModel):
             
             try:
                 print(f"[SRT] Whisper: Running pipeline inference...")
+                # Force task to transcribe to avoid detection overhead
+                gen_kwargs = {"task": "transcribe"}
+                
                 # We use the generator directly via the pipeline's internal logic
-                # or just call it and hope the generator fix works.
-                # In some versions of transformers, passing a list/generator to pipe() is safer.
-                res_list = list(pipe(fake_preprocess(None), return_timestamps=ts_arg))
+                # Passing a generator to pipe() is the officially supported way to stream preprocessed data
+                res_list = list(pipe(fake_preprocess(None), return_timestamps=ts_arg, generate_kwargs=gen_kwargs))
                 res = res_list[0] if res_list else {"text": "", "chunks": []}
                 
                 if res and (isinstance(res, dict) and res.get("chunks")):
