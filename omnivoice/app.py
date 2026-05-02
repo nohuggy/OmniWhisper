@@ -10,9 +10,11 @@ import soundfile as sf
 import gradio as gr
 
 # Add project root to path
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if project_root not in sys.path:
+    sys.path.append(project_root)
 
-from tts_engine import TTSEngine, get_slug
+from omni_engine import TTSEngine, get_slug
 from whisper_engine import format_timestamp, smart_balanced_split, align_robust
 from transformers import pipeline
 
@@ -22,8 +24,15 @@ from transformers import pipeline
 TTS_ENGINE = None
 WHISPER_PIPE = None
 
-def load_engines(model_path=".", whisper_path="./whisper-large-v3-turbo"):
+def load_engines(model_path=None, whisper_path=None):
     global TTS_ENGINE, WHISPER_PIPE
+    
+    # Default paths relative to this script
+    if model_path is None:
+        model_path = os.path.join(os.path.dirname(__file__), "resources")
+    if whisper_path is None:
+        whisper_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "whisper-large-v3-turbo")
+
     if TTS_ENGINE is None:
         TTS_ENGINE = TTSEngine(model_path)
     
@@ -283,8 +292,8 @@ def build_app(model_path=".", whisper_path="./whisper_model"):
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", default=".")
-    parser.add_argument("--whisper", default="./whisper-large-v3-turbo")
+    parser.add_argument("--model", default=None)
+    parser.add_argument("--whisper", default=None)
     parser.add_argument("--share", action="store_true")
     args = parser.parse_args()
     

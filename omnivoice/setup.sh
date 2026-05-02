@@ -33,8 +33,8 @@ $PYTHON_BIN -m pip install torch torchvision torchaudio
 
 # --- Milestone B: Whisper & App Dependencies ---
 echo "--- MILESTONE B: Installing Dependencies ---"
-if [ -f "requirements.txt" ]; then
-    $PYTHON_BIN -m pip install -r requirements.txt
+if [ -f "../requirements.txt" ]; then
+    $PYTHON_BIN -m pip install -r ../requirements.txt
 fi
 $PYTHON_BIN -m pip install "numpy<2" "gradio<6" huggingface_hub
 
