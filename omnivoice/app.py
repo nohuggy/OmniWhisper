@@ -9,6 +9,7 @@ import numpy as np
 import soundfile as sf
 import gradio as gr
 import warnings
+import time
 
 # Suppress annoying warnings for a cleaner "pro" boot
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -57,7 +58,10 @@ def load_engines(model_path=None, whisper_path=None):
             print("✅ OmniVoice Weights: Ready (Fallback)")
 
     if TTS_ENGINE is None:
-        TTS_ENGINE = TTSEngine(model_path)
+        # Use float32 for CPU, float16 for GPU
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        dtype = torch.float32 if device == "cpu" else torch.float16
+        TTS_ENGINE = TTSEngine(model_path, device=device, dtype=dtype)
     
     # 2. Handle Whisper Model
     if WHISPER_PIPE is None:
@@ -80,93 +84,59 @@ def load_engines(model_path=None, whisper_path=None):
         if TTS_ENGINE and hasattr(TTS_ENGINE.model, "_asr_pipe"):
             print("🔄 Injecting shared Whisper pipe into TTS Engine...")
             TTS_ENGINE.model._asr_pipe = WHISPER_PIPE
+
     return TTS_ENGINE, WHISPER_PIPE
 
 # ---------------------------------------------------------------------------
-# SRT Logic using Whisper
+# UI Helpers & Constants
 # ---------------------------------------------------------------------------
-def text_to_srt_whisper(text, audio_tuple, pipe):
-    sampling_rate, waveform = audio_tuple
-    # Convert to float32 if needed
-    if waveform.dtype == np.int16:
-        audio_np = waveform.astype(np.float32) / 32767.0
-    else:
-        audio_np = waveform
+_CATEGORIES = {
+    "Gender / 性别": ["Male / 男", "Female / 女"],
+    "Age / 年龄": ["Child / 儿童", "Teenager / 少年", "Young Adult / 青年", "Middle-aged / 中年", "Elderly / 老年"],
+    "Pitch / 音调": ["Very Low Pitch / 极低音调", "Low Pitch / 低音调", "Moderate Pitch / 中音调", "High Pitch / 高音调", "Very High Pitch / 极高音调"],
+    "Style / 风格": ["Whisper / 耳语"],
+    "English Accent / 英文口音": ["American Accent / 美式口音", "British Accent / 英国口音", "Australian Accent / 澳大利亚口音", "Chinese Accent / 中国口音"],
+    "Chinese Dialect / 中文方言": ["Northeast Dialect / 东北话", "Sichuan Dialect / 四川话", "Henan Dialect / 河南话", "Shaanxi Dialect / 陕西话"],
+}
 
-    # Ensure mono
-    if audio_np.ndim > 1:
-        audio_np = audio_np.mean(axis=1)
+_LANG_DISPLAY = ["Auto", "Chinese", "English", "Japanese", "Korean", "French", "German", "Spanish"]
 
-    print("Running Whisper Inference for SRT...")
-    res = pipe(audio_np, return_timestamps=True, chunk_length_s=30, batch_size=1)
-    whisper_chunks = res.get("chunks", [])
-    
-    # Clean timestamps
-    last_s = 0.0
-    for c in whisper_chunks:
-        s, e = c["timestamp"]
-        if s is None: c["timestamp"] = (last_s, last_s + 0.5)
-        elif e is None: c["timestamp"] = (s, s + 0.5)
-        last_s = c["timestamp"][1]
-
-    user_segments = smart_balanced_split(text)
-    aligned = align_robust(user_segments, whisper_chunks)
-    
-    srt_output = ""
-    for i, ((start, end), seg_text) in enumerate(zip(aligned, user_segments)):
-        srt_output += f"{i+1}\n{format_timestamp(start)} --> {format_timestamp(end)}\n{seg_text}\n\n"
-    
-    return srt_output.strip()
-
-# ---------------------------------------------------------------------------
-# Gradio UI Components
-# ---------------------------------------------------------------------------
 CSS = """
 .gradio-container {max-width: 100% !important; font-size: 16px !important;}
 .gradio-container h1 {font-size: 1.5em !important;}
-.gradio-container .prose {font-size: 1.1em !important;}
 .compact-audio audio {height: 60px !important;}
-.compact-audio .waveform {min-height: 80px !important;}
 
+/* Restore the output-panel aesthetics */
 .output-panel, 
 .output-panel * {
     background-color: #1f2937 !important;
-    background: #1f2937 !important;
     border: none !important;
     box-shadow: none !important;
 }
+.output-panel { gap: 0 !important; overflow: visible !important; }
 
-.output-panel {
-    gap: 0 !important;
-    overflow: visible !important;
-}
-
-.output-panel .custom-label {
+.custom-label {
     display: inline-flex; align-items: center; gap: 6px;
-    font-size: var(--block-label-text-size, 13px);
-    font-weight: 700;
+    font-size: 13px; font-weight: 700;
     color: #fff !important;
     background-color: #4f46e5 !important;
-    background: #4f46e5 !important;
     padding: 4px 10px;
     border-radius: 6px !important;
     margin-top: -1px !important;
     margin-left: -1px !important;
-    margin-bottom: 0 !important;
-    z-index: 10;
     width: fit-content;
 }
+.custom-label svg { width: 14px; height: 14px; background: transparent !important;}
 
 .lyrics-viewer {
     height: 260px;
     width: 100% !important;
     overflow-y: auto;
     padding: 10px 20px !important;
-    display: none;
     box-sizing: border-box;
+    display: none;
 }
-
-.lyrics-viewer .lyric-line {
+.lyric-line {
     text-align: center;
     padding: 6px 12px;
     margin: 4px 0;
@@ -176,16 +146,15 @@ CSS = """
     font-size: 1.1em;
     line-height: 1.4;
 }
-
-.lyrics-viewer .lyric-line.active {
+.lyric-line.active {
     color: #fff !important;
     font-weight: 600 !important;
     font-size: 1.25em !important;
-    background-color: rgba(59,130,246,0.2) !important;
+    background-color: rgba(79, 70, 229, 0.2) !important;
 }
 """
 
-LYRICS_JS = """
+_LYRICS_JS = """
 () => {
     function parseSRT(raw) {
         if (!raw) return [];
@@ -206,127 +175,279 @@ LYRICS_JS = """
         return cues;
     }
 
-    function updateLyrics() {
-        var audioId = 'vc-audio', lyricsId = 'vc-lyrics', srtBoxId = 'vc-srt-text';
-        var audioContainer = document.getElementById(audioId);
-        var viewer = document.getElementById(lyricsId);
-        var rawBox = document.getElementById(srtBoxId);
-        if (!audioContainer || !viewer || !rawBox) return;
-
-        var audioEl = audioContainer.querySelector('audio');
-        if (!audioEl) return;
-
-        var srtText = '';
-        var ta = rawBox.querySelector('textarea');
-        if (ta) srtText = ta.value;
-        
-        if (!viewer._cues || viewer._lastSRT !== srtText) {
-            viewer._cues = parseSRT(srtText);
-            viewer._lastSRT = srtText;
+    function renderLyrics(viewer, cues, activeIdx) {
+        if (!cues.length) {
+            viewer.innerHTML = '<div style="text-align:center;color:#aaa;padding:40px;">No subtitles</div>';
+            return;
+        }
+        if (!viewer.children.length || viewer._cueCount !== cues.length) {
             var html = '';
-            for (var i = 0; i < viewer._cues.length; i++) {
-                html += '<div class="lyric-line" data-idx="' + i + '">' + viewer._cues[i].text + '</div>';
+            for (var i = 0; i < cues.length; i++) {
+                html += '<div class="lyric-line" data-idx="' + i + '">' + cues[i].text + '</div>';
             }
             viewer.innerHTML = html;
-            viewer.style.display = srtText ? 'block' : 'none';
+            viewer._cueCount = cues.length;
         }
-
-        var currentTime = audioEl.currentTime;
-        var activeIdx = -1;
-        for (var i = 0; i < viewer._cues.length; i++) {
-            if (currentTime >= viewer._cues[i].start && currentTime <= viewer._cues[i].end) {
-                activeIdx = i;
-                break;
+        if (viewer._lastActive === activeIdx) return;
+        viewer._lastActive = activeIdx;
+        var lines = viewer.children;
+        for (var i = 0; i < lines.length; i++) {
+            var el = lines[i];
+            var idx = parseInt(el.getAttribute('data-idx'));
+            if (idx === activeIdx) {
+                el.classList.add('active');
+                var targetTop = el.offsetTop - (viewer.offsetHeight / 2) + (el.offsetHeight / 2);
+                viewer.scrollTo({ top: targetTop, behavior: 'smooth' });
+            } else {
+                el.classList.remove('active');
             }
         }
+    }
 
-        if (viewer._lastActive !== activeIdx) {
-            viewer._lastActive = activeIdx;
-            var lines = viewer.children;
-            for (var i = 0; i < lines.length; i++) {
-                if (i === activeIdx) {
-                    lines[i].classList.add('active');
-                    var targetTop = lines[i].offsetTop - (viewer.offsetHeight / 2) + (lines[i].offsetHeight / 2);
-                    viewer.scrollTo({ top: targetTop, behavior: 'smooth' });
-                } else {
-                    lines[i].classList.remove('active');
+    var PAIRS = [['vc-audio', 'vc-lyrics', 'vc-srt-text'], ['vd-audio', 'vd-lyrics', 'vd-srt-text']];
+
+    function updateLyrics() {
+        PAIRS.forEach(function(pair) {
+            var audioId = pair[0], lyricsId = pair[1], srtBoxId = pair[2];
+            var audioContainer = document.getElementById(audioId);
+            var viewer = document.getElementById(lyricsId);
+            var rawBox = document.getElementById(srtBoxId);
+            if (!audioContainer || !viewer || !rawBox) return;
+
+            var currentTime = -1;
+            var audioEl = audioContainer.querySelector('audio');
+            if (audioEl && !audioEl.paused && audioEl.currentTime > 0) {
+                currentTime = audioEl.currentTime;
+            }
+
+            if (currentTime >= 0) {
+                if (rawBox.style.display !== 'none') {
+                    rawBox.style.display = 'none';
+                    viewer.style.display = 'block';
+                    var ta = rawBox.querySelector('textarea');
+                    viewer._cues = parseSRT(ta ? ta.value : '');
+                }
+                var cues = viewer._cues || [];
+                var activeIdx = -1;
+                for (var i = 0; i < cues.length; i++) {
+                    if (currentTime >= cues[i].start && currentTime < cues[i].end) { activeIdx = i; break; }
+                }
+                renderLyrics(viewer, cues, activeIdx);
+            } else {
+                if (rawBox.style.display === 'none') {
+                    viewer.style.display = 'none';
+                    rawBox.style.display = 'block';
                 }
             }
-        }
+        });
     }
     setInterval(updateLyrics, 100);
 }
 """
 
-def build_app(model_path=".", whisper_path="./whisper_model"):
-    tts, whisper = load_engines(model_path, whisper_path)
+# ---------------------------------------------------------------------------
+# Core Logic
+# ---------------------------------------------------------------------------
 
-    def process_tts(text, ref_audio, ref_text, speed, gen_srt):
-        waveform, sr = tts.generate(
-            text=text,
-            voice_clone_audio=ref_audio,
-            voice_clone_text=ref_text,
-            speed=speed
+def text_to_srt_whisper(text, audio_tuple, pipe, language="zh"):
+    """Generate SRT using Whisper word-level timestamps via pipeline."""
+    try:
+        sr, waveform = audio_tuple
+        # Normalize to float32 for pipeline
+        waveform_f32 = waveform.astype(np.float32) / 32767.0
+        
+        # Whisper pipeline expects a dict or numpy array
+        result = pipe({"sampling_rate": sr, "raw": waveform_f32}, return_timestamps="word")
+        chunks = result.get("chunks", [])
+        if not chunks:
+            return "Whisper failed to produce timestamps."
+            
+        segments = smart_balanced_split(text)
+        seg_token_counts = []
+        all_words = []
+        for s in segments:
+            tokens = re.findall(r"[\u4e00-\u9fff]|[a-zA-Z0-9]+", s)
+            seg_token_counts.append(len(tokens))
+            all_words.extend(tokens)
+            
+        srt_output = ""
+        chunk_idx = 0
+        for i, (seg_text, requested_count) in enumerate(zip(segments, seg_token_counts), 1):
+            if requested_count == 0: continue
+            start_time, end_time = None, None
+            found = 0
+            while chunk_idx < len(chunks) and found < requested_count:
+                c = chunks[chunk_idx]
+                if start_time is None: start_time = c["timestamp"][0]
+                end_time = c["timestamp"][1]
+                found += 1
+                chunk_idx += 1
+            
+            if start_time is not None:
+                if end_time is None: end_time = start_time + 1.0
+                srt_output += f"{i}\n{format_timestamp(start_time)} --> {format_timestamp(end_time)}\n{seg_text}\n\n"
+        
+        return srt_output.strip()
+    except Exception as e:
+        return f"SRT Error: {e}"
+
+def generate_core(text, language, ref_audio, instruct, num_step, guidance, denoise, speed, duration, pp, po, mode):
+    if not text or not text.strip():
+        return None, "", None, "Text is required."
+    
+    start_time = time.time()
+    lang_code = language if language != "Auto" else None
+    
+    try:
+        audio_tuple = TTS_ENGINE.generate(
+            text=text.strip(),
+            ref_audio=ref_audio,
+            instruct=instruct,
+            language=lang_code,
+            num_step=num_step,
+            guidance_scale=guidance,
+            denoise=denoise,
+            speed=speed,
+            duration=duration,
+            preprocess_prompt=pp,
+            postprocess_output=po
         )
         
+        elapsed = time.time() - start_time
+        word_count = len(re.findall(r"[\u4e00-\u9fff]|[a-zA-Z0-9]+", text))
+        status_msg = f"Done in {elapsed:.1f}s | {word_count} tokens"
+        
+        # Audio path
+        sampling_rate, waveform = audio_tuple
         slug = get_slug(text)
         temp_dir = tempfile.mkdtemp()
-        wav_path = os.path.join(temp_dir, f"{slug}.wav")
-        sf.write(wav_path, waveform, sr)
+        audio_path = os.path.join(temp_dir, f"{slug}.wav")
+        sf.write(audio_path, waveform, sampling_rate)
         
-        srt_content = ""
-        download_path = wav_path
-        
-        if gen_srt:
-            srt_content = text_to_srt_whisper(text, (sr, waveform), whisper)
-            srt_path = wav_path.replace(".wav", ".srt")
-            with open(srt_path, "w", encoding="utf-8") as f:
-                f.write(srt_content)
+        # SRT
+        srt_content = text_to_srt_whisper(text, audio_tuple, WHISPER_PIPE)
+        srt_path = audio_path.replace(".wav", ".srt")
+        with open(srt_path, "w", encoding="utf-8") as f:
+            f.write(srt_content)
             
-            zip_path = os.path.join(temp_dir, f"{slug}.zip")
-            with zipfile.ZipFile(zip_path, "w") as zipf:
-                zipf.write(wav_path, arcname=f"{slug}.wav")
-                zipf.write(srt_path, arcname=f"{slug}.srt")
-            download_path = zip_path
+        # ZIP
+        zip_path = os.path.join(temp_dir, f"{slug}.zip")
+        with zipfile.ZipFile(zip_path, "w") as zipf:
+            zipf.write(audio_path, arcname=f"{slug}.wav")
+            zipf.write(srt_path, arcname=f"{slug}.srt")
             
-        return wav_path, srt_content, download_path
+        return audio_path, srt_content, zip_path, status_msg
+    except Exception as e:
+        return None, "", None, f"Error: {e}"
 
-    with gr.Blocks(theme=gr.themes.Soft(), css=CSS) as demo:
-        gr.Markdown("# 🎙️ OmniWhisper: Precision TTS & Whisper SRT")
+# ---------------------------------------------------------------------------
+# UI Construction
+# ---------------------------------------------------------------------------
+
+def build_app(model_path=None, whisper_path=None):
+    load_engines(model_path, whisper_path)
+    
+    with gr.Blocks(theme=gr.themes.Soft(), css=CSS, title="OmniVoice Pro") as demo:
+        gr.Markdown("# OmniVoice Pro — Advanced TTS & Subtitles")
         
-        with gr.Row():
-            with gr.Column(scale=1):
-                text_input = gr.Textbox(label="Text to Synthesize", lines=5)
-                ref_audio = gr.Audio(label="Reference Voice (Clone)", type="filepath")
-                ref_text = gr.Textbox(label="Reference Text (Optional)")
-                speed = gr.Slider(0.5, 2.0, value=1.0, label="Speed")
-                gen_srt = gr.Checkbox(label="Generate SRT (Whisper)", value=True)
-                btn = gr.Button("Generate", variant="primary")
+        with gr.Tabs():
+            # VOICE CLONE TAB
+            with gr.TabItem("Voice Clone"):
+                with gr.Row():
+                    with gr.Column(scale=1):
+                        vc_text = gr.Textbox(label="Text to Synthesize", lines=5, placeholder="Enter text...")
+                        vc_ref = gr.Audio(label="Reference Audio (Voice to Clone)", type="filepath", elem_classes="compact-audio")
+                        
+                        with gr.Accordion("Advanced Settings", open=False):
+                            vc_lang = gr.Dropdown(label="Language", choices=_LANG_DISPLAY, value="Auto")
+                            vc_speed = gr.Slider(0.5, 2.0, value=1.0, step=0.1, label="Speed")
+                            vc_dur = gr.Number(label="Fixed Duration (sec)", value=0)
+                            vc_steps = gr.Slider(4, 64, value=32, step=4, label="Inference Steps")
+                            vc_gs = gr.Slider(0, 5, value=0.5, step=0.1, label="Guidance Scale")
+                            vc_dn = gr.Checkbox(label="Denoise", value=True)
+                            vc_pp = gr.Checkbox(label="Preprocess Ref", value=True)
+                            vc_po = gr.Checkbox(label="Postprocess Output", value=True)
+                            
+                        vc_btn = gr.Button("Generate Voice", variant="primary")
+                        
+                    with gr.Column(scale=1):
+                        vc_audio = gr.Audio(label="Result", type="filepath", elem_id="vc-audio")
+                        with gr.Group(elem_classes="output-panel"):
+                            gr.HTML('<label class="custom-label">Subtitle</label>')
+                            gr.HTML('<div id="vc-lyrics" class="lyrics-viewer"></div>')
+                            vc_srt = gr.Textbox(show_label=False, lines=10, elem_id="vc-srt-text", interactive=False)
+                        
+                        vc_dl = gr.DownloadButton("📥 Download ZIP (Audio + SRT)", visible=False)
+                        vc_status = gr.Textbox(label="Status", interactive=False)
+
+            # VOICE DESIGN TAB
+            with gr.TabItem("Voice Design"):
+                with gr.Row():
+                    with gr.Column(scale=1):
+                        vd_text = gr.Textbox(label="Text to Synthesize", lines=5, placeholder="Enter text...")
+                        
+                        vd_groups = []
+                        with gr.Row():
+                            for cat, choices in list(_CATEGORIES.items())[:2]:
+                                vd_groups.append(gr.Dropdown(label=cat, choices=["Auto"] + choices, value="Auto"))
+                        with gr.Row():
+                            for cat, choices in list(_CATEGORIES.items())[2:4]:
+                                vd_groups.append(gr.Dropdown(label=cat, choices=["Auto"] + choices, value="Auto"))
+                        with gr.Row():
+                            for cat, choices in list(_CATEGORIES.items())[4:]:
+                                vd_groups.append(gr.Dropdown(label=cat, choices=["Auto"] + choices, value="Auto"))
+                                
+                        with gr.Accordion("Advanced Settings", open=False):
+                            vd_lang = gr.Dropdown(label="Language", choices=_LANG_DISPLAY, value="Auto")
+                            vd_speed = gr.Slider(0.5, 2.0, value=1.0, step=0.1, label="Speed")
+                            vd_dur = gr.Number(label="Fixed Duration (sec)", value=0)
+                            vd_steps = gr.Slider(4, 64, value=32, step=4, label="Inference Steps")
+                            vd_gs = gr.Slider(0, 5, value=0.5, step=0.1, label="Guidance Scale")
+                            vd_dn = gr.Checkbox(label="Denoise", value=True)
+                            vd_po = gr.Checkbox(label="Postprocess Output", value=True)
+
+                        vd_btn = gr.Button("Create Voice", variant="primary")
+
+                    with gr.Column(scale=1):
+                        vd_audio = gr.Audio(label="Result", type="filepath", elem_id="vd-audio")
+                        with gr.Group(elem_classes="output-panel"):
+                            gr.HTML('<label class="custom-label">Subtitle</label>')
+                            gr.HTML('<div id="vd-lyrics" class="lyrics-viewer"></div>')
+                            vd_srt = gr.Textbox(show_label=False, lines=10, elem_id="vd-srt-text", interactive=False)
+                        
+                        vd_dl = gr.DownloadButton("📥 Download ZIP (Audio + SRT)", visible=False)
+                        vd_status = gr.Textbox(label="Status", interactive=False)
+
+        # Event Handlers
+        def vc_handler(*args):
+            return generate_core(args[0], args[1], args[2], "", args[3], args[4], args[5], args[6], args[7], args[8], args[9], "clone")
             
-            with gr.Column(scale=1, elem_classes="output-panel"):
-                gr.HTML('<div class="custom-label">Output Audio & Lyrics</div>')
-                out_audio = gr.Audio(label="Result", elem_id="vc-audio")
-                out_lyrics = gr.HTML('<div id="vc-lyrics" class="lyrics-viewer"></div>')
-                out_srt = gr.Textbox(label="SRT Content", visible=False, elem_id="vc-srt-text")
-                out_download = gr.File(label="Download (WAV/ZIP)")
+        vc_btn.click(
+            vc_handler,
+            inputs=[vc_text, vc_lang, vc_ref, vc_steps, vc_gs, vc_dn, vc_speed, vc_dur, vc_pp, vc_po],
+            outputs=[vc_audio, vc_srt, vc_dl, vc_status]
+        ).then(lambda dl: gr.update(visible=True, value=dl), inputs=[vc_dl], outputs=[vc_dl])
 
-        btn.click(
-            process_tts,
-            inputs=[text_input, ref_audio, ref_text, speed, gen_srt],
-            outputs=[out_audio, out_srt, out_download]
-        )
+        def vd_handler(text, lang, speed, dur, steps, gs, dn, po, *groups):
+            instruct = ", ".join([g for g in groups if g != "Auto"])
+            return generate_core(text, lang, None, instruct, steps, gs, dn, speed, dur, False, po, "design")
+
+        vd_btn.click(
+            vd_handler,
+            inputs=[vd_text, vd_lang, vd_speed, vd_dur, vd_steps, vd_gs, vd_dn, vd_po] + vd_groups,
+            outputs=[vd_audio, vd_srt, vd_dl, vd_status]
+        ).then(lambda dl: gr.update(visible=True, value=dl), inputs=[vd_dl], outputs=[vd_dl])
+
+        demo.load(None, None, None, js=_LYRICS_JS)
         
-        demo.load(js=LYRICS_JS)
-
     return demo
 
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", default=None)
-    parser.add_argument("--whisper", default=None)
-    parser.add_argument("--share", action="store_true")
+    parser.add_argument("--model", type=str, default=None)
+    parser.add_argument("--whisper", type=str, default=None)
     args = parser.parse_args()
     
     app = build_app(args.model, args.whisper)
-    app.launch(share=args.share)
+    app.launch(server_name="0.0.0.0", server_port=7860, share=True)
