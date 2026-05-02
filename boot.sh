@@ -56,4 +56,4 @@ echo "🌐 Launching WebUI..."
 # Ensure current directory is in PYTHONPATH for module resolution
 export PYTHONPATH=$PYTHONPATH:.
 # We point to the local folder for the model
-python3 omnivoice/cli/demo.py --model . --asr_model "$WHISPER_DIR" --share
+python3 app.py --model . --whisper "$WHISPER_DIR" --share

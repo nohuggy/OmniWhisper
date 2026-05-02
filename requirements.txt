@@ -10,7 +10,6 @@ webdataset
 numpy<2
 soundfile
 librosa
-ctc-forced-aligner
 pypinyin
 unidecode
 BeautifulSoup4

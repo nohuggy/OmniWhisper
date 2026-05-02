@@ -1,16 +1,21 @@
 #!/bin/bash
 
-# Omni_CTC Setup Script - VERSION 1.0 (CTC-ONNX)
+# OmniWhisper Setup Script - VERSION 1.0 (Whisper-Large-v3-Turbo)
 set -e
 
 echo "================================================"
-echo "   Omni_CTC Setup VERSION 1.0 (CTC-ONNX)"
+echo "   OmniWhisper Setup VERSION 1.0"
 echo "================================================"
 
 # 1. System Dependencies
 echo "[1/4] Step 1: System Dependencies..."
-sudo apt-get update -y
-sudo apt-get install -y ffmpeg libsndfile1-dev python3-dev build-essential
+if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+    sudo apt-get update -y
+    sudo apt-get install -y ffmpeg libsndfile1-dev python3-dev build-essential
+elif [[ "$OSTYPE" == "darwin"* ]]; then
+    echo "MacOS detected. Ensuring ffmpeg is installed..."
+    brew install ffmpeg || echo "Please install ffmpeg manually via brew."
+fi
 
 # 2. Python Selection
 echo "[2/4] Step 2: Python Environment..."
@@ -22,28 +27,23 @@ fi
 echo "Selected Python: $PYTHON_BIN"
 
 # --- Milestone A: Torch Ecosystem ---
-# Stable Torch version for Lightning AI
-echo "--- MILESTONE A: Installing Stable Torch ---"
+echo "--- MILESTONE A: Installing Torch ---"
 $PYTHON_BIN -m pip install --upgrade pip setuptools wheel
 $PYTHON_BIN -m pip install torch torchvision torchaudio
 
-# --- Milestone B: CTC-Forced-Aligner ---
-echo "--- MILESTONE B: Installing Alignment Packages ---"
-$PYTHON_BIN -m pip install ctc-forced-aligner unidecode transformers pypinyin tiktoken sentencepiece
-
-# --- Milestone C: App Dependencies ---
-echo "--- MILESTONE C: Installing App Dependencies ---"
+# --- Milestone B: Whisper & App Dependencies ---
+echo "--- MILESTONE B: Installing Dependencies ---"
 if [ -f "requirements.txt" ]; then
     $PYTHON_BIN -m pip install -r requirements.txt
 fi
-$PYTHON_BIN -m pip install "numpy<2" "gradio<6"
+$PYTHON_BIN -m pip install "numpy<2" "gradio<6" huggingface_hub
 
 # 3. Verification
 echo "[4/4] Step 4: Verification..."
-$PYTHON_BIN -c "import ctc_forced_aligner; print('✅ ctc-forced-aligner found')"
+$PYTHON_BIN -c "import torch; import transformers; print('✅ Environment check: OK')"
 
 echo ""
-echo "✅ OMNI_CTC SETUP COMPLETE!"
+echo "✅ OMNIWHISPER SETUP COMPLETE!"
 echo "------------------------------------------------"
 echo "To start: bash boot.sh"
 echo "------------------------------------------------"
