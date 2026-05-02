@@ -87,12 +87,22 @@ def load_engines(model_path=None, whisper_path=None):
                     repo_id="openai/whisper-large-v3-turbo",
                     local_dir=whisper_path,
                     local_dir_use_symlinks=False,
+                    local_files_only=False,
                     resume_download=True
                 )
+                # Verify
+                if not any(f.endswith(('.bin', '.safetensors', '.pt')) for f in os.listdir(whisper_path) if os.path.isfile(os.path.join(whisper_path, f))):
+                    raise RuntimeError("Download completed but no weights found")
                 print("✅ Whisper model downloaded successfully.")
             except Exception as e:
-                print(f"❌ Failed to download Whisper model: {e}")
-                sys.exit(1)
+                print(f"⚠️ HuggingFace library failed: {e}")
+                print("Trying fallback download via git for Whisper...")
+                os.system(f"git clone https://huggingface.co/openai/whisper-large-v3-turbo {whisper_path}_tmp && mv {whisper_path}_tmp/* {whisper_path}/ && rm -rf {whisper_path}_tmp")
+                
+                if not any(f.endswith(('.bin', '.safetensors', '.pt')) for f in os.listdir(whisper_path) if os.path.isfile(os.path.join(whisper_path, f))):
+                    print("❌ Whisper download failed completely.")
+                    sys.exit(1)
+                print("✅ Whisper model recovered via fallback.")
             
         print(f"Loading Whisper model from: {whisper_path}...")
         device = "cuda" if torch.cuda.is_available() else "cpu"
