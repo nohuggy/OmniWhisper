@@ -43,9 +43,9 @@ def load_engines(model_path=None, whisper_path=None):
 
     # 1. Handle OmniVoice TTS Model
     # Ensure internet access for download if files are missing
-    if os.environ.get("HF_HUB_OFFLINE") == "1":
-        print("⚠️ HF_HUB_OFFLINE is set. Unsetting for model download check...")
-        os.environ["HF_HUB_OFFLINE"] = "0"
+    if "HF_HUB_OFFLINE" in os.environ:
+        print(f"⚠️ Removing HF_HUB_OFFLINE={os.environ['HF_HUB_OFFLINE']} to force download...")
+        del os.environ["HF_HUB_OFFLINE"]
 
     if not os.path.exists(model_path) or not any(f.endswith(('.bin', '.safetensors')) for f in os.listdir(model_path) if os.path.isfile(os.path.join(model_path, f))):
         print(f"📥 OmniVoice model weights not found in {model_path}. Downloading from HuggingFace...")
@@ -55,6 +55,7 @@ def load_engines(model_path=None, whisper_path=None):
                 repo_id="k2-fsa/OmniVoice",
                 local_dir=model_path,
                 local_dir_use_symlinks=False,
+                local_files_only=False, # Explicitly disable local-only mode
                 resume_download=True
             )
             # Verify download
@@ -63,8 +64,15 @@ def load_engines(model_path=None, whisper_path=None):
             print("✅ OmniVoice weights downloaded successfully.")
         except Exception as e:
             print(f"❌ Failed to download OmniVoice weights: {e}")
-            print("Please ensure you have internet access and that HuggingFace is reachable.")
-            sys.exit(1)
+            print("Trying fallback download via git...")
+            # Fallback if huggingface_hub is being difficult
+            os.system(f"git clone https://huggingface.co/k2-fsa/OmniVoice {model_path}_tmp && mv {model_path}_tmp/* {model_path}/ && rm -rf {model_path}_tmp")
+            
+            # Final check after fallback
+            if not any(f.endswith(('.bin', '.safetensors')) for f in os.listdir(model_path) if os.path.isfile(os.path.join(model_path, f))):
+                print("❌ Fallback download also failed. Please check your internet connection.")
+                sys.exit(1)
+            print("✅ OmniVoice weights recovered via fallback.")
 
     if TTS_ENGINE is None:
         TTS_ENGINE = TTSEngine(model_path)
