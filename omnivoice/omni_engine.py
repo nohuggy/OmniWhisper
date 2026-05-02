@@ -42,8 +42,8 @@ class TTSEngine:
         self.sampling_rate = self.model.sampling_rate
 
     def generate(self, text, language=None, ref_audio=None, ref_text=None, 
-                 instruct=None, speed=1.0, duration=None, num_step=32, 
-                 guidance_scale=2.0, denoise=True, preprocess_prompt=True,
+                 instruct=None, speed=0.9, duration=None, num_step=32, 
+                 guidance_scale=0.5, denoise=True, preprocess_prompt=True,
                  postprocess_output=True):
         
         gen_config = OmniVoiceGenerationConfig(

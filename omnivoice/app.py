@@ -360,7 +360,7 @@ def build_app(model_path=None, whisper_path=None):
                         
                         with gr.Accordion("Advanced Settings", open=False):
                             vc_lang = gr.Dropdown(label="Language", choices=_LANG_DISPLAY, value="Auto")
-                            vc_speed = gr.Slider(0.5, 2.0, value=1.0, step=0.1, label="Speed")
+                            vc_speed = gr.Slider(0.5, 2.0, value=0.9, step=0.05, label="Speed")
                             vc_dur = gr.Number(label="Fixed Duration (sec)", value=0)
                             vc_steps = gr.Slider(4, 64, value=32, step=4, label="Inference Steps")
                             vc_gs = gr.Slider(0, 5, value=0.5, step=0.1, label="Guidance Scale")
@@ -399,7 +399,7 @@ def build_app(model_path=None, whisper_path=None):
                                 
                         with gr.Accordion("Advanced Settings", open=False):
                             vd_lang = gr.Dropdown(label="Language", choices=_LANG_DISPLAY, value="Auto")
-                            vd_speed = gr.Slider(0.5, 2.0, value=1.0, step=0.1, label="Speed")
+                            vd_speed = gr.Slider(0.5, 2.0, value=0.9, step=0.05, label="Speed")
                             vd_dur = gr.Number(label="Fixed Duration (sec)", value=0)
                             vd_steps = gr.Slider(4, 64, value=32, step=4, label="Inference Steps")
                             vd_gs = gr.Slider(0, 5, value=0.5, step=0.1, label="Guidance Scale")
