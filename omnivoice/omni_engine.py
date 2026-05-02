@@ -28,7 +28,7 @@ class TTSEngine:
             self.device = device
             
         print(f"Initializing OmniVoice TTS Engine on {self.device}...")
-        self.model = OmniVoice(model_path, device=self.device)
+        self.model = OmniVoice.from_pretrained(model_path, device_map=self.device)
         self.sampling_rate = self.model.sampling_rate
 
     def generate(self, text, language=None, voice_clone_audio=None, voice_clone_text=None, 

@@ -53,7 +53,13 @@ def load_engines(model_path=None, whisper_path=None):
             print("✅ Whisper model downloaded successfully.")
             
         print(f"Loading Whisper model from: {whisper_path}...")
-        WHISPER_PIPE = pipeline("automatic-speech-recognition", model=whisper_path, device="cpu")
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        WHISPER_PIPE = pipeline("automatic-speech-recognition", model=whisper_path, device=device)
+        
+        # Share the same pipe with the TTS engine to save ~1.6GB VRAM/RAM
+        if TTS_ENGINE and hasattr(TTS_ENGINE.model, "_asr_pipe"):
+            print("🔄 Injecting shared Whisper pipe into TTS Engine...")
+            TTS_ENGINE.model._asr_pipe = WHISPER_PIPE
     return TTS_ENGINE, WHISPER_PIPE
 
 # ---------------------------------------------------------------------------
