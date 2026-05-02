@@ -380,8 +380,9 @@ class OmniVoice(PreTrainedModel):
             
             original_preprocess = pipe.preprocess
             def fake_preprocess(inputs, **kwargs):
-                # Return a generator to satisfy pipeline's iterator expectations if needed
-                yield {"input_features": input_features}
+                # Return a generator to satisfy pipeline's iterator expectations
+                # Added 'is_last': True to fix the pipeline iteration crash
+                yield {"input_features": input_features, "is_last": True}
             
             pipe.preprocess = fake_preprocess
             
