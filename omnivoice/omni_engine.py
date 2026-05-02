@@ -21,24 +21,37 @@ def get_slug(text, max_tokens=8):
     return res.strip()
 
 class TTSEngine:
-    def __init__(self, model_path, device=None):
+    def __init__(self, model_path, device=None, dtype=None):
         if device is None:
             self.device = "cuda" if torch.cuda.is_available() else "cpu"
         else:
             self.device = device
             
-        print(f"Initializing OmniVoice TTS Engine on {self.device}...")
-        self.model = OmniVoice.from_pretrained(model_path, device_map=self.device)
+        # Default dtype logic: float32 for CPU (mandatory), float16 for GPU
+        if dtype is None:
+            self.dtype = torch.float32 if self.device == "cpu" else torch.float16
+        else:
+            self.dtype = dtype
+
+        print(f"Initializing OmniVoice TTS Engine on {self.device} ({self.dtype})...")
+        self.model = OmniVoice.from_pretrained(
+            model_path, 
+            device_map=self.device,
+            torch_dtype=self.dtype
+        )
         self.sampling_rate = self.model.sampling_rate
 
-    def generate(self, text, language=None, voice_clone_audio=None, voice_clone_text=None, 
+    def generate(self, text, language=None, ref_audio=None, ref_text=None, 
                  instruct=None, speed=1.0, duration=None, num_step=32, 
-                 guidance_scale=2.0, denoise=True):
+                 guidance_scale=2.0, denoise=True, preprocess_prompt=True,
+                 postprocess_output=True):
         
         gen_config = OmniVoiceGenerationConfig(
             num_step=int(num_step),
             guidance_scale=float(guidance_scale),
             denoise=bool(denoise),
+            preprocess_prompt=bool(preprocess_prompt),
+            postprocess_output=bool(postprocess_output)
         )
 
         kw = dict(
@@ -52,10 +65,10 @@ class TTSEngine:
         if duration is not None and float(duration) > 0:
             kw["duration"] = float(duration)
 
-        if voice_clone_audio:
+        if ref_audio:
             kw["voice_clone_prompt"] = self.model.create_voice_clone_prompt(
-                ref_audio=voice_clone_audio,
-                ref_text=voice_clone_text,
+                ref_audio=ref_audio,
+                ref_text=ref_text,
             )
 
         if instruct and instruct.strip():
@@ -64,4 +77,4 @@ class TTSEngine:
         audio = self.model.generate(**kw)
         waveform = (audio[0] * 32767).astype(np.int16).squeeze()
         
-        return waveform, self.sampling_rate
+        return self.sampling_rate, waveform
