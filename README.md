@@ -11,10 +11,10 @@ git clone https://github.com/nohuggy/OmniWhisper.git
 cd OmniWhisper && bash setup_lightning.sh
 ```
 
-### 2. Launch WebUI
-After setup, use the master boot script to start the server:
+### 2. Launch & Sync WebUI
+To launch the server (and ensure you have the latest updates), run:
 ```bash
-cd OmniWhisper && bash boot.sh
+cd OmniWhisper && git pull && bash boot.sh
 ```
 
 ## 🛠️ Credits
