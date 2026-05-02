@@ -20,7 +20,7 @@ OmniWhisper/
 │   │   └── tts_engine.py
 │   └── srt/                # Whisper SRT Alignment Engine
 │       └── whisper_engine.py
-├── whisper_model/          # Local Whisper Large v3 Turbo weights
+├── whisper-large-v3-turbo/ # Local Whisper Large v3 Turbo weights
 ├── omnivoice/              # Core OmniVoice library
 └── README.md
 ```
@@ -34,10 +34,10 @@ pip install -r requirements.txt
 
 ### 2. Launch WebUI
 ```bash
-python3 app.py --model . --whisper ./whisper_model --share
+python3 app.py --model . --whisper ./whisper-large-v3-turbo --share
 ```
 > [!NOTE]
-> The whisper model is excluded from the repository. On the first run, the system will automatically download `whisper-large-v3-turbo` (approx 1.6GB) from HuggingFace to the `./whisper_model` folder.
+> The whisper model is excluded from the repository. On the first run, the system will automatically download `whisper-large-v3-turbo` (approx 1.6GB) from HuggingFace to the `./whisper-large-v3-turbo` folder.
 
 ## 🛠️ Components
 

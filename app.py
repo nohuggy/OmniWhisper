@@ -22,7 +22,7 @@ from transformers import pipeline
 TTS_ENGINE = None
 WHISPER_PIPE = None
 
-def load_engines(model_path=".", whisper_path="./whisper_model"):
+def load_engines(model_path=".", whisper_path="./whisper-large-v3-turbo"):
     global TTS_ENGINE, WHISPER_PIPE
     if TTS_ENGINE is None:
         TTS_ENGINE = TTSEngine(model_path)
@@ -284,7 +284,7 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", default=".")
-    parser.add_argument("--whisper", default="./whisper_model")
+    parser.add_argument("--whisper", default="./whisper-large-v3-turbo")
     parser.add_argument("--share", action="store_true")
     args = parser.parse_args()
     

@@ -30,7 +30,7 @@ export TRANSFORMERS_OFFLINE=1
 export HF_HUB_OFFLINE=1
 
 # 4. Pre-cache Whisper model locally (only runs once; skipped if already present)
-WHISPER_DIR="$DIR/openai/whisper-large-v3-turbo"
+WHISPER_DIR="$DIR/whisper-large-v3-turbo"
 if [ ! -d "$WHISPER_DIR" ]; then
     echo "📥 Whisper model not found locally. Downloading once to $WHISPER_DIR..."
     unset TRANSFORMERS_OFFLINE HF_HUB_OFFLINE
