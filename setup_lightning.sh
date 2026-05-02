@@ -29,7 +29,7 @@ echo "Selected Python: $PYTHON_BIN"
 # --- Milestone A: Torch Ecosystem ---
 echo "--- MILESTONE A: Installing Torch ---"
 $PYTHON_BIN -m pip install --upgrade pip setuptools wheel
-$PYTHON_BIN -m pip install torch torchvision torchaudio
+$PYTHON_BIN -m pip install "torch>=2.4.0" "torchaudio>=2.4.0" "torchvision>=0.19.0"
 
 # --- Milestone B: Whisper & App Dependencies ---
 echo "--- MILESTONE B: Installing Dependencies ---"
