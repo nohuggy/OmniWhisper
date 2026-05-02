@@ -128,6 +128,12 @@ CSS = """
 }
 .custom-label svg { width: 14px; height: 14px; background: transparent !important;}
 
+/* Make all buttons bold and consistent */
+button.primary, button.secondary {
+    font-weight: 700 !important;
+    font-family: inherit !important;
+}
+
 .lyrics-viewer {
     height: 260px;
     width: 100% !important;
@@ -362,15 +368,14 @@ def build_app(model_path=None, whisper_path=None):
                 with gr.Row():
                     with gr.Column(scale=1):
                         vc_text = gr.Textbox(label="Text to Synthesize", lines=5, placeholder="Enter text...")
-                        vc_ref = gr.Audio(label="Reference Audio (Voice to Clone)", type="filepath", elem_classes="compact-audio")
+                        vc_ref = gr.Audio(label="Reference Audio", type="filepath", elem_classes="compact-audio")
                         
                         vc_ref_text = gr.Textbox(
-                            label="Reference Text (Transcribed)", 
+                            label="Reference Text", 
                             lines=2, 
-                            placeholder="Transcript of reference audio. Click 'Transcribe' or wait for auto-transcribe.",
-                            info="AI uses this to understand the reference voice's style."
+                            placeholder="Transcript of reference audio. Click 'Transcribe' or wait for auto-transcribe."
                         )
-                        vc_transcribe_btn = gr.Button("🔍 Transcribe Reference", variant="secondary", size="sm")
+                        vc_transcribe_btn = gr.Button("Transcribe Reference", variant="secondary")
 
                         with gr.Accordion("Advanced Settings", open=False):
                             vc_lang = gr.Dropdown(label="Language", choices=_LANG_DISPLAY, value="Auto")
