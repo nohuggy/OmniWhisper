@@ -36,6 +36,7 @@ echo "--- MILESTONE B: Installing Dependencies ---"
 if [ -f "requirements.txt" ]; then
     $PYTHON_BIN -m pip install -r requirements.txt
 fi
+$PYTHON_BIN -m pip install --upgrade "transformers>=4.48.0" accelerate
 $PYTHON_BIN -m pip install "numpy<2" "gradio<6" huggingface_hub
 
 # 3. Verification
