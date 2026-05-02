@@ -4,34 +4,32 @@ OmniWhisper is a production-grade **Text-to-Speech (TTS)** and **SRT Generation*
 
 ## 📂 Project Structure
 
-The repository is organized for a clean root environment:
-
 ```text
 OmniWhisper/
 ├── README.md               # Project documentation
 ├── requirements.txt        # Shared dependencies
+├── setup_lightning.sh      # Master Setup Script (Root)
+├── boot.sh                 # Master Boot Script (Root)
 ├── omnivoice/              # Core Library & Application
-│   ├── app.py              # Master WebUI (Lightning.ai Entry Point)
+│   ├── app.py              # Master WebUI
 │   ├── omni_engine.py      # TTS Engine Interface
-│   ├── resources/          # OmniVoice weights & config
-│   ├── boot.sh / setup.sh  # Deployment scripts
-│   └── ...                 
+│   └── resources/          # OmniVoice weights & config
 └── whisper-large-v3-turbo/ # Whisper Engine & Calibration
     ├── whisper_engine.py   # Whisper Alignment Interface
-    ├── Whisper ASR Mapping and Calibration.md # User Calibration Notes
     └── ...                 
 ```
 
-## 🚀 Quick Start (Lightning.ai)
+## 🚀 Installation & Launch (Lightning.ai)
 
-### 1. Environment Setup
-Run the setup script inside the `omnivoice` folder to install dependencies:
+### 1. New Installation
+If this is your first time, clone the repository and run the setup script:
 ```bash
-cd omnivoice && bash setup.sh
+git clone https://github.com/nohuggy/OmniWhisper.git
+cd OmniWhisper && bash setup_lightning.sh
 ```
 
 ### 2. Launch WebUI
-Use the master boot script to start the server:
+After setup, use the master boot script to start the server:
 ```bash
 bash boot.sh
 ```
