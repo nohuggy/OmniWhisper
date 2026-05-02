@@ -447,7 +447,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", type=str, default=None)
     parser.add_argument("--whisper", type=str, default=None)
+    parser.add_argument("--share", action="store_true", help="Launch with a public Gradio share link")
     args = parser.parse_args()
     
     app = build_app(args.model, args.whisper)
-    app.launch(server_name="0.0.0.0", server_port=7860, share=True)
+    app.launch(server_name="0.0.0.0", server_port=7860, share=args.share)
