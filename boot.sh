@@ -60,9 +60,4 @@ echo "🌐 Launching WebUI..."
 export PYTHONPATH=$PYTHONPATH:.
 
 # We point to the local folder for the model
-echo -e "\033[94m--------------------------------------------------\033[0m"
-echo -e "\033[94m🚀 OmniWhisper WebUI starting...\033[0m"
-echo -e "\033[94m🔗 Access your app below:\033[0m"
-echo -e "\033[94m--------------------------------------------------\033[0m"
-
 python3 omnivoice/app.py --model "./omnivoice/resources" --whisper "$WHISPER_DIR" --share

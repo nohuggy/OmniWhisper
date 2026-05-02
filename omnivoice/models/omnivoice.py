@@ -417,9 +417,9 @@ class OmniVoice(PreTrainedModel):
                     try:
                         from opencc import OpenCC
                         cc = OpenCC('t2s')
-                        res["text"] = cc.convert(res["text"])
+                        res["text"] = cc.convert(res["text"]).replace("著", "着")
                         for chunk in res["chunks"]:
-                            chunk["text"] = cc.convert(chunk["text"])
+                            chunk["text"] = cc.convert(chunk["text"]).replace("著", "着")
                     except Exception as ecc:
                         print(f"[SRT] OpenCC conversion failed: {ecc}")
                         
@@ -431,7 +431,7 @@ class OmniVoice(PreTrainedModel):
                     try:
                         from opencc import OpenCC
                         cc = OpenCC('t2s')
-                        res["text"] = cc.convert(res["text"])
+                        res["text"] = cc.convert(res["text"]).replace("著", "着")
                     except Exception as ecc:
                         print(f"[SRT] OpenCC string conversion failed: {ecc}")
                     return res["text"]

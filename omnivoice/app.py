@@ -307,7 +307,7 @@ def text_to_srt_whisper(text, audio_tuple, pipe, language="zh"):
         try:
             from opencc import OpenCC
             cc = OpenCC('t2s')
-            srt_output = cc.convert(srt_output)
+            srt_output = cc.convert(srt_output).replace("著", "着")
         except: pass
 
         return srt_output.strip()
@@ -510,4 +510,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     app = build_app(args.model, args.whisper)
+    
+    print("\033[94m" + "="*50 + "\033[0m")
+    print("\033[94m🚀 OmniWhisper is ready at: http://localhost:7860\033[0m")
+    print("\033[94m" + "="*50 + "\033[0m")
+    
     app.launch(server_name="0.0.0.0", server_port=7860, share=args.share)
