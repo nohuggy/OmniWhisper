@@ -17,15 +17,6 @@ After setup, use the master boot script to start the server:
 cd OmniWhisper && bash boot.sh
 ```
 
-> [!NOTE]
-> This setup is optimized for **Lightning.ai**. It automatically handles model pre-caching and ensures the environment is cleared of hung processes before launch.
-
-## ✨ Key Features
-- **🗣️ Zero-Shot Voice Cloning**: High-fidelity cloning via OmniVoice.
-- **⏱️ Whisper SRT Alignment**: Millisecond-accurate word mapping using Whisper-Large-v3-Turbo.
-- **🎵 Lyrics Scrolling**: Real-time subtitle synchronization in the WebUI.
-- **📦 ZIP Packaging**: Integrated packaging of WAV and SRT outputs.
-
 ## 🛠️ Credits
 Powered by **OmniVoice** and **OpenAI Whisper**.
 Custom calibration logic by **nohuggy**.
