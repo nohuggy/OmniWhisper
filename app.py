@@ -12,8 +12,8 @@ import gradio as gr
 # Add project root to path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from engines.tts.tts_engine import TTSEngine, get_slug
-from engines.srt.whisper_engine import format_timestamp, smart_balanced_split, align_robust
+from tts_engine import TTSEngine, get_slug
+from whisper_engine import format_timestamp, smart_balanced_split, align_robust
 from transformers import pipeline
 
 # ---------------------------------------------------------------------------

@@ -15,12 +15,9 @@ OmniWhisper is a production-grade **Text-to-Speech (TTS)** and **SRT Generation*
 ```text
 OmniWhisper/
 ├── app.py                  # Main WebUI entry point
-├── engines/
-│   ├── tts/                # TTS Generation Engine
-│   │   └── tts_engine.py
-│   └── srt/                # Whisper SRT Alignment Engine
-│       └── whisper_engine.py
-├── whisper-large-v3-turbo/ # Local Whisper Large v3 Turbo weights
+├── tts_engine.py           # TTS Generation Logic
+├── whisper_engine.py       # Whisper SRT Alignment Logic
+├── whisper-large-v3-turbo/ # Local Whisper weights
 ├── omnivoice/              # Core OmniVoice library
 └── README.md
 ```
