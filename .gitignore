@@ -8,3 +8,4 @@ pytorch_model.bin
 omnivoice/ctc_forced_aligner/model.onnx
 models/zh_alignment/*.bin
 .DS_Store
+whisper_model/

@@ -26,7 +26,18 @@ def load_engines(model_path=".", whisper_path="./whisper_model"):
     global TTS_ENGINE, WHISPER_PIPE
     if TTS_ENGINE is None:
         TTS_ENGINE = TTSEngine(model_path)
+    
     if WHISPER_PIPE is None:
+        if not os.path.exists(whisper_path) or not os.listdir(whisper_path):
+            print(f"📥 Whisper model not found at {whisper_path}. Downloading from HuggingFace...")
+            from huggingface_hub import snapshot_download
+            snapshot_download(
+                repo_id="openai/whisper-large-v3-turbo",
+                local_dir=whisper_path,
+                local_dir_use_symlinks=False
+            )
+            print("✅ Whisper model downloaded successfully.")
+            
         print(f"Loading Whisper model from: {whisper_path}...")
         WHISPER_PIPE = pipeline("automatic-speech-recognition", model=whisper_path, device="cpu")
     return TTS_ENGINE, WHISPER_PIPE

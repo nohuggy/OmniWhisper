@@ -36,6 +36,8 @@ pip install -r requirements.txt
 ```bash
 python3 app.py --model . --whisper ./whisper_model --share
 ```
+> [!NOTE]
+> The whisper model is excluded from the repository. On the first run, the system will automatically download `whisper-large-v3-turbo` (approx 1.6GB) from HuggingFace to the `./whisper_model` folder.
 
 ## 🛠️ Components
 
