@@ -397,9 +397,9 @@ def build_app(model_path=None, whisper_path=None):
                         )
                         
                         with gr.Row():
-                            vc_transcribe_btn = gr.Button("Transcribe Reference", variant="secondary")
-                            vc_ref_zip_btn = gr.UploadButton("Upload Ref Zip", file_types=[".zip"], variant="secondary")
-                            vc_ref_txt_btn = gr.UploadButton("Upload Ref Txt", file_types=[".txt"], variant="secondary")
+                            vc_transcribe_btn = gr.Button("Trans Ref", variant="secondary")
+                            vc_ref_zip_btn = gr.UploadButton("Ref Zip", file_types=[".zip"], variant="secondary")
+                            vc_ref_txt_btn = gr.UploadButton("Ref Txt", file_types=[".txt"], variant="secondary")
 
                         with gr.Accordion("Advanced Settings", open=False):
                             vc_instruct = gr.Textbox(
@@ -514,7 +514,7 @@ def build_app(model_path=None, whisper_path=None):
             with zipfile.ZipFile(zip_file.name, 'r') as z:
                 z.extractall(tmp)
                 for f in z.namelist():
-                    if f.endswith(('.wav', '.mp3', '.flac')):
+                    if f.endswith(('.wav', '.mp3', '.flac')) and not f.startswith('__MACOSX') and not os.path.basename(f).startswith('.'):
                         audio_path = os.path.join(tmp, f)
                     if f.endswith('.txt') and not f.startswith('__MACOSX') and not os.path.basename(f).startswith('.'):
                         txt_path = os.path.join(tmp, f)
