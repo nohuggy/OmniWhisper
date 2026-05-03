@@ -7,6 +7,18 @@ import re
 from transformers import pipeline
 import difflib
 
+def unify_punctuation(text):
+    if not text: return ""
+    # Ellipsis: Convert ..., ⋯⋯, 。。。 to standard ……
+    text = re.sub(r'(\.\.\.+|…+|⋯+|。。。+)', '……', text)
+    # Title Marks: Convert 〈 〉, 『 』, 「 」 to standard 《 》 or 〈 〉
+    # User's request: unify use of marks
+    text = text.replace('『', '「').replace('』', '」') 
+    # Quotation marks: Inner 『 』 -> ‘ ’ , Outer 「 」 -> “ ”
+    text = text.replace('「', '“').replace('」', '”')
+    text = text.replace('『', '‘').replace('』', '’')
+    return text
+
 def format_timestamp(seconds):
     td = float(seconds)
     hours = int(td // 3600)
@@ -22,12 +34,14 @@ def smart_balanced_split(text):
     all_segments = []
     
     for p_text in paragraphs:
+        # Pre-process: standardize spaces but keep punctuation
         p_text = re.sub(r'\s+', ' ', p_text).strip()
-        pattern = re.compile(r'([\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]|[a-zA-Z0-9-]+)([^\w\s\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]*)(\s*)')
+        # Pattern captures: (leading punctuation) + (word) + (trailing punctuation) + (trailing spaces)
+        pattern = re.compile(r'([^\w\s\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]*)([\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]|[a-zA-Z0-9-]+)([^\w\s\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]*)(\s*)')
         tokens = []
         for match in pattern.finditer(p_text):
-            word, punct, space = match.groups()
-            tokens.append(word + punct + space)
+            lead_punct, word, trail_punct, space = match.groups()
+            tokens.append(lead_punct + word + trail_punct + space)
         
         if not tokens: continue
         

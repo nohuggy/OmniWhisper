@@ -24,7 +24,7 @@ for p in [project_root, os.path.dirname(os.path.abspath(__file__)), os.path.join
         sys.path.append(p)
 
 from omni_engine import TTSEngine, get_slug
-from whisper_engine import format_timestamp, smart_balanced_split, align_robust
+from whisper_engine import format_timestamp, unify_punctuation, smart_balanced_split, align_robust
 from transformers import pipeline
 
 # ---------------------------------------------------------------------------
@@ -91,18 +91,6 @@ def load_engines(model_path=None, whisper_path=None):
 # UI Helpers & Constants
 # ---------------------------------------------------------------------------
 _CATEGORIES = {
-    "Gender / 性别": ["Male / 男", "Female / 女"],
-    "Age / 年龄": ["Child / 儿童", "Teenager / 少年", "Young Adult / 青年", "Middle-aged / 中年", "Elderly / 老年"],
-    "Pitch / 音调": ["Very Low Pitch / 极低音调", "Low Pitch / 低音调", "Moderate Pitch / 中音调", "High Pitch / 高音调", "Very High Pitch / 极高音调"],
-    "Style / 风格": ["Whisper / 耳语"],
-    "English Accent / 英文口音": ["American Accent / 美式口音", "British Accent / 英国口音", "Australian Accent / 澳大利亚口音", "Chinese Accent / 中国口音"],
-    "Chinese Dialect / 中文方言": ["Northeast Dialect / 东北话", "Sichuan Dialect / 四川话", "Henan Dialect / 河南话", "Shaanxi Dialect / 陕西话"],
-}
-
-from omnivoice.utils.lang_map import LANG_NAMES, lang_display_name
-_LANG_DISPLAY = ["Auto"] + sorted(lang_display_name(n) for n in LANG_NAMES)
-
-_CATEGORIES = {
     "Gender": ["Male", "Female"],
     "Age": ["Child", "Teenager", "Young adult", "Middle-aged", "Elderly"],
     "Pitch": ["Very low pitch", "Low pitch", "Moderate pitch", "High pitch", "Very high pitch"],
@@ -110,6 +98,9 @@ _CATEGORIES = {
     "Accent": ["American accent", "British accent", "Australian accent", "Chinese accent", "Canadian accent", "Indian accent", "Korean accent", "Portuguese accent", "Russian accent", "Japanese accent"],
     "Dialect": ["东北话", "四川话", "河南话", "陕西话", "贵州话", "云南话", "桂林话", "济南话", "石家庄话", "甘肃话", "宁夏话", "青岛话"],
 }
+
+from omnivoice.utils.lang_map import LANG_NAMES, lang_display_name
+_LANG_DISPLAY = ["Auto"] + sorted(lang_display_name(n) for n in LANG_NAMES)
 
 CSS = """
 .gradio-container {max-width: 100% !important; font-size: 16px !important;}
@@ -335,7 +326,7 @@ _LYRICS_JS = """
 # Core Logic
 # ---------------------------------------------------------------------------
 
-def text_to_srt_whisper(text, audio_tuple, pipe, language="zh"):
+def text_to_srt_whisper(text, audio_tuple, pipe, language="zh", zh_conv="None"):
     """Generate SRT using Whisper word-level timestamps via pipeline."""
     try:
         sr, waveform = audio_tuple
@@ -349,8 +340,6 @@ def text_to_srt_whisper(text, audio_tuple, pipe, language="zh"):
         segments = smart_balanced_split(text)
         
         # 1. Global Clock Reconstruction (Fixing the Whisper 30s Wall)
-        # Whisper pipeline can reset timestamps or drift every 30s. We detect these resets
-        # and accumulate an offset to maintain an absolute timeline.
         abs_chunks = []
         offset = 0.0
         last_chunk_e = 0.0
@@ -359,18 +348,15 @@ def text_to_srt_whisper(text, audio_tuple, pipe, language="zh"):
             if s is None: s = last_chunk_e
             if e is None: e = s + 0.5
             
-            # 1. Reset Detection: If the current chunk (with current offset) 
-            # is significantly behind the last known end time, it's a window reset.
+            # Reset Detection
             if (s + offset) < (last_chunk_e - 1.0) and s < 10.0:
-                # Accumulate offset in 30s increments (Whisper's window size)
-                # while we are still behind the timeline.
                 while (s + offset) < (last_chunk_e - 1.0):
                     offset += 30.0
             
             abs_s = s + offset
             abs_e = e + offset
             
-            # 2. Monotonicity Enforcement: Ensure timestamps never go backwards
+            # Monotonicity Enforcement
             if abs_s < last_chunk_e: abs_s = last_chunk_e
             if abs_e < abs_s: abs_e = abs_s + 0.1
             
@@ -399,9 +385,7 @@ def text_to_srt_whisper(text, audio_tuple, pipe, language="zh"):
         mapping = [None] * len(user_full_clean)
         last_w_end = 0
         for u_s, w_s, length in matcher.get_matching_blocks():
-            # Monotonicity check: Skip blocks that jump backwards in the audio timeline
-            if w_s < last_w_end:
-                continue
+            if w_s < last_w_end: continue
             for i in range(length):
                 if w_s + i < len(char_times):
                     mapping[u_s + i] = char_times[w_s + i]
@@ -417,7 +401,6 @@ def text_to_srt_whisper(text, audio_tuple, pipe, language="zh"):
             first_s = mapping[first_idx][0]
             for i in range(first_idx):
                 mapping[i] = ((i / first_idx) * first_s if first_idx > 0 else 0, ((i + 1) / first_idx) * first_s if first_idx > 0 else 0)
-                
             for j in range(len(matched_indices) - 1):
                 idx1, idx2 = matched_indices[j], matched_indices[j+1]
                 t1, t2 = mapping[idx1][1], mapping[idx2][0]
@@ -427,7 +410,6 @@ def text_to_srt_whisper(text, audio_tuple, pipe, language="zh"):
                         s_interp = t1 + ((k-1) / gap_len) * (t2 - t1)
                         e_interp = t1 + (k / gap_len) * (t2 - t1)
                         mapping[idx1 + k] = (s_interp, e_interp)
-                        
             last_idx = matched_indices[-1]
             last_e = mapping[last_idx][1]
             total_end = char_times[-1][1] if char_times else last_e + 1.0
@@ -447,26 +429,37 @@ def text_to_srt_whisper(text, audio_tuple, pipe, language="zh"):
             srt_output += f"{i}\n{format_timestamp(start_time)} --> {format_timestamp(end_time)}\n{seg_text}\n\n"
             curr += len(s_clean)
         
-        # Convert to Simplified Chinese
-        try:
-            from opencc import OpenCC
-            cc = OpenCC('t2s')
-            srt_output = cc.convert(srt_output).replace("著", "着")
-        except: pass
+        if zh_conv != "None":
+            try:
+                from opencc import OpenCC
+                cc = OpenCC('t2s' if zh_conv == 'T2S' else 's2t')
+                srt_output = cc.convert(srt_output)
+            except: pass
 
         return srt_output.strip()
     except Exception as e:
         return f"SRT Error: {e}"
 
-def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guidance, denoise, speed, duration, pp, po, mode, gen_srt=True):
+def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guidance, denoise, speed, duration, pp, po, mode, gen_srt=True, convert_punc=True, zh_conv="None"):
     if not text or not text.strip():
-        return None, "", None, "Text is required."
+        yield None, "", None, "Text is required."
+        return
     
+    # 1. Punctuation Unification
+    if convert_punc:
+        text = unify_punctuation(text)
+        if ref_text:
+            ref_text = unify_punctuation(ref_text)
+            
     start_time = time.time()
     lang_code = language if language != "Auto" else None
     
     try:
-        audio_tuple = TTS_ENGINE.generate(
+        # 2. TTS Generation (Streaming Progress)
+        full_waveform = []
+        sr = 16000
+        
+        gen_iter = TTS_ENGINE.generate(
             text=text.strip(),
             ref_audio=ref_audio,
             ref_text=ref_text,
@@ -481,47 +474,67 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
             postprocess_output=po
         )
         
-        elapsed = time.time() - start_time
-        tokens = len(text.strip())
-        words = len(re.findall(r"[\u4e00-\u9fff]|[a-zA-Z0-9]+", text))
-        status_msg = f"✅ Done in {elapsed:.1f}s | {tokens} tokens | {words} Words"
+        for curr, total, chunk_wave in gen_iter:
+            if chunk_wave is None:
+                # Progress update
+                yield None, "", None, f"⏳ Generation in progress... Synthesizing TTS (Chunk {curr}/{total})"
+            else:
+                # Final chunk returned
+                full_waveform = chunk_wave
+                sr = TTS_ENGINE.sampling_rate
         
-        # Audio path
-        sampling_rate, waveform = audio_tuple
-        slug = get_slug(text)
-        temp_dir = tempfile.mkdtemp()
-        audio_path = os.path.join(temp_dir, f"{slug}.wav")
-        sf.write(audio_path, waveform, sampling_rate)
+        audio_tuple = (sr, full_waveform)
+        duration_s = len(full_waveform) / sr
         
-        # SRT
+        # 3. SRT Generation
         srt_content = ""
-        zip_path = None
         if gen_srt:
-            srt_content = text_to_srt_whisper(text, audio_tuple, WHISPER_PIPE)
+            yield None, "", None, f"⏳ TTS Done ({duration_s:.1fs}). Running ASR for alignment..."
+            srt_content = text_to_srt_whisper(text, audio_tuple, WHISPER_PIPE, zh_conv=zh_conv)
+            # Show Subtitles immediately
+            yield None, srt_content, None, f"⏳ ASR Done. Finalizing files..."
+        
+        # 4. Final Result Preparation
+        slug = get_slug(text)
+        # Use unique timestamp to prevent Gradio 0-min cache issues
+        unique_slug = f"{slug}_{int(time.time())}"
+        
+        # Use Gradio's temp directory if possible, or outputs/
+        os.makedirs("outputs", exist_ok=True)
+        audio_path = f"outputs/{unique_slug}.wav"
+        sf.write(audio_path, full_waveform, sr)
+        
+        zip_path = None
+        if srt_content:
             srt_path = audio_path.replace(".wav", ".srt")
             with open(srt_path, "w", encoding="utf-8") as f:
                 f.write(srt_content)
             
-            # ZIP
-            zip_path = os.path.join(temp_dir, f"{slug}.zip")
+            zip_path = audio_path.replace(".wav", ".zip")
             with zipfile.ZipFile(zip_path, "w") as zipf:
                 zipf.write(audio_path, arcname=f"{slug}.wav")
                 zipf.write(srt_path, arcname=f"{slug}.srt")
+            # Show ZIP Button
+            yield None, srt_content, zip_path, f"⏳ Files ready. Finishing..."
         else:
-            # If no SRT, download is just the WAV
             zip_path = audio_path
-            
-        return audio_path, srt_content, zip_path, status_msg
+
+        elapsed = time.time() - start_time
+        tokens = len(text.strip())
+        status_msg = f"✅ Done in {elapsed:.1f}s | {duration_s:.1f}s Audio | {tokens} Chars"
+        
+        # Final yield shows Audio Player
+        yield audio_path, srt_content, zip_path, status_msg
+        
     except Exception as e:
-        return None, "", None, f"Error: {e}"
+        import traceback
+        traceback.print_exc()
+        yield None, "", None, f"Error: {e}"
 
 # ---------------------------------------------------------------------------
 # UI Construction
 # ---------------------------------------------------------------------------
 
-def build_app(model_path=None, whisper_path=None):
-    load_engines(model_path, whisper_path)
-    
 def build_app(model_path=None, whisper_path=None):
     load_engines(model_path, whisper_path)
     
@@ -560,9 +573,11 @@ def build_app(model_path=None, whisper_path=None):
                             vc_steps = gr.Slider(4, 64, value=32, step=4, label="Inference Steps")
                             vc_gs = gr.Slider(0, 5, value=2.0, step=0.1, label="Guidance Scale")
                             vc_dn = gr.Checkbox(label="Denoise", value=True)
+                            vc_zh_conv = gr.Dropdown(label="Chinese Conversion", choices=["None", "S2T", "T2S"], value="None")
                             vc_pp = gr.Checkbox(label="Clean Ref Audio (Silence Removal)", value=True)
                             vc_po = gr.Checkbox(label="Trim Output Silence", value=True)
                             vc_gen_srt = gr.Checkbox(label="Generate Subtitles (SRT)", value=True)
+                            vc_punc = gr.Checkbox(label="Convert Punctuation", value=True)
                             
                         vc_btn = gr.Button("Generate Voice", variant="primary")
                         
@@ -602,6 +617,8 @@ def build_app(model_path=None, whisper_path=None):
                             vd_dn = gr.Checkbox(label="Denoise", value=True)
                             vd_po = gr.Checkbox(label="Trim Output Silence", value=True)
                             vd_gen_srt = gr.Checkbox(label="Generate Subtitles (SRT)", value=True)
+                            vd_punc = gr.Checkbox(label="Convert Punctuation", value=True)
+                            vd_zh_conv = gr.Dropdown(label="Chinese Conversion", choices=["None", "S2T", "T2S"], value="None")
 
                         vd_btn = gr.Button("Create Voice", variant="primary")
 
@@ -631,25 +648,14 @@ def build_app(model_path=None, whisper_path=None):
                 return f"Error during transcription: {e}"
 
         def vc_handler(*args):
-            # 0:text, 1:lang, 2:ref_audio, 3:ref_text, 4:instruct, 5:steps, 6:gs, 7:denoise, 8:speed, 9:dur, 10:pp, 11:po, 12:gen_srt
-            yield None, "", None, "⏳ Generation in progress... Synthesizing audio, please wait."
-            result = generate_core(
-                text=args[0], 
-                language=args[1], 
-                ref_audio=args[2], 
-                ref_text=args[3], 
-                instruct=args[4], 
-                num_step=args[5], 
-                guidance=args[6], 
-                denoise=args[7], 
-                speed=args[8], 
-                duration=args[9], 
-                pp=args[10], 
-                po=args[11], 
-                mode="clone", 
-                gen_srt=args[12]
-            )
-            yield result
+            # 0:text, 1:lang, 2:ref_audio, 3:ref_text, 4:instruct, 5:steps, 6:gs, 7:denoise, 8:punc, 9:zh, 10:speed, 11:dur, 12:pp, 13:po, 14:gen_srt
+            for res in generate_core(
+                text=args[0], language=args[1], ref_audio=args[2], ref_text=args[3], 
+                instruct=args[4], num_step=args[5], guidance=args[6], denoise=args[7], 
+                convert_punc=args[8], zh_conv=args[9], speed=args[10], duration=args[11], 
+                pp=args[12], po=args[13], mode="clone", gen_srt=args[14]
+            ):
+                yield res
             
         def process_ref_zip(zip_file):
             if not zip_file: return None, ""
@@ -699,21 +705,20 @@ def build_app(model_path=None, whisper_path=None):
 
         vc_btn.click(
             vc_handler,
-            inputs=[vc_text, vc_lang, vc_ref, vc_ref_text, vc_instruct, vc_steps, vc_gs, vc_dn, vc_speed, vc_dur, vc_pp, vc_po, vc_gen_srt],
+            inputs=[vc_text, vc_lang, vc_ref, vc_ref_text, vc_instruct, vc_steps, vc_gs, vc_dn, vc_punc, vc_zh_conv, vc_speed, vc_dur, vc_pp, vc_po, vc_gen_srt],
             outputs=[vc_audio, vc_srt, vc_dl, vc_status]
-        ).then(lambda dl: gr.update(visible=True, value=dl), inputs=[vc_dl], outputs=[vc_dl])
+        ).then(lambda dl: gr.update(visible=bool(dl)), inputs=[vc_dl], outputs=[vc_dl])
 
-        def vd_handler(text, lang, speed, dur, steps, gs, dn, po, gen_srt, *groups):
+        def vd_handler(text, lang, speed, dur, steps, gs, dn, punc, zh, po, gen_srt, *groups):
             instruct = ", ".join([g for g in groups if g != "Auto"])
-            yield None, "", None, "⏳ Generation in progress... Synthesizing audio, please wait."
-            result = generate_core(text, lang, None, None, instruct, steps, gs, dn, speed, dur, False, po, "design", gen_srt)
-            yield result
+            for res in generate_core(text, lang, None, None, instruct, steps, gs, dn, speed, dur, False, po, "design", gen_srt, punc, zh):
+                yield res
 
         vd_btn.click(
             vd_handler,
-            inputs=[vd_text, vd_lang, vd_speed, vd_dur, vd_steps, vd_gs, vd_dn, vd_po, vd_gen_srt] + vd_groups,
+            inputs=[vd_text, vd_lang, vd_speed, vd_dur, vd_steps, vd_gs, vd_dn, vd_punc, vd_zh_conv, vd_po, vd_gen_srt] + vd_groups,
             outputs=[vd_audio, vd_srt, vd_dl, vd_status]
-        ).then(lambda dl: gr.update(visible=True, value=dl), inputs=[vd_dl], outputs=[vd_dl])
+        ).then(lambda dl: gr.update(visible=bool(dl)), inputs=[vc_dl], outputs=[vc_dl])
 
         demo.load(None, None, None, js=_LYRICS_JS)
         

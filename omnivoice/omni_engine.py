@@ -45,10 +45,23 @@ class TTSEngine:
         self.sampling_rate = self.model.sampling_rate
 
     def generate(self, text, language=None, ref_audio=None, ref_text=None, 
-                 instruct=None, speed=0.9, duration=None, num_step=32, 
-                 guidance_scale=0.5, denoise=True, preprocess_prompt=True,
+                 instruct=None, speed=1.0, duration=None, num_step=32, 
+                 guidance_scale=2.0, denoise=True, preprocess_prompt=True,
                  postprocess_output=True):
         
+        # Split text into sentences for progress reporting
+        # This prevents the UI from appearing 'frozen' during long generations
+        delimiters = r'([。！？；.!?;])'
+        raw_parts = re.split(delimiters, text.strip())
+        chunks = []
+        for i in range(0, len(raw_parts)-1, 2):
+            chunks.append(raw_parts[i] + raw_parts[i+1])
+        if len(raw_parts) % 2 == 1 and raw_parts[-1]:
+            chunks.append(raw_parts[-1])
+        
+        chunks = [c.strip() for c in chunks if c.strip()]
+        if not chunks: chunks = [text.strip()]
+
         gen_config = OmniVoiceGenerationConfig(
             num_step=int(num_step),
             guidance_scale=float(guidance_scale),
@@ -57,35 +70,38 @@ class TTSEngine:
             postprocess_output=bool(postprocess_output)
         )
 
-        kw = dict(
-            text=text.strip(), 
-            language=language if (language and language != "Auto") else None,
-            generation_config=gen_config
-        )
-
-        if speed != 1.0:
-            kw["speed"] = float(speed)
-        if duration is not None and float(duration) > 0:
-            kw["duration"] = float(duration)
-
+        full_waveform = []
+        voice_clone_prompt = None
         if ref_audio:
-            # DEVELOPER NOTE: Gradio Textbox passes "" (empty string) not None when empty.
-            # We must force conversion to None so the underlying model's 'if ref_text is None'
-            # check triggers the internal Whisper auto-transcription fallback. 
-            # Without this, the model uses an empty prompt, causing hallucination/bad audio.
             clean_ref_text = ref_text.strip() if (ref_text and ref_text.strip()) else None
-            kw["voice_clone_prompt"] = self.model.create_voice_clone_prompt(
+            voice_clone_prompt = self.model.create_voice_clone_prompt(
                 ref_audio=ref_audio,
                 ref_text=clean_ref_text,
             )
 
-        if instruct and instruct.strip():
-            kw["instruct"] = instruct.strip()
+        for i, chunk in enumerate(chunks, 1):
+            # YIELD PROGRESS (Chunk X/Y)
+            yield i, len(chunks), None
+            
+            kw = dict(
+                text=chunk, 
+                language=language if (language and language != "Auto") else None,
+                generation_config=gen_config,
+                voice_clone_prompt=voice_clone_prompt
+            )
+            if speed != 1.0: kw["speed"] = float(speed)
+            if duration is not None and float(duration) > 0:
+                # Approximate duration proportional to text length
+                kw["duration"] = float(duration) * (len(chunk) / len(text))
+            if instruct and instruct.strip(): kw["instruct"] = instruct.strip()
 
-        audio = self.model.generate(**kw)
-        waveform = (audio[0] * 32767).astype(np.int16).squeeze()
-        
-        return self.sampling_rate, waveform
+            audio = self.model.generate(**kw)
+            chunk_wave = (audio[0] * 32767).astype(np.int16).squeeze()
+            full_waveform.append(chunk_wave)
+
+        final_waveform = np.concatenate(full_waveform)
+        # Final yield with full waveform
+        yield len(chunks), len(chunks), final_waveform
     def transcribe(self, audio_path):
         if not audio_path or not os.path.exists(audio_path):
             return ""
