@@ -326,123 +326,48 @@ _LYRICS_JS = """
 # Core Logic
 # ---------------------------------------------------------------------------
 
-def text_to_srt_whisper(text, audio_tuple, pipe, language="zh", zh_conv="None"):
-    """Generate SRT using Whisper word-level timestamps via pipeline."""
+def text_to_srt_whisper(text, audio_tuple, pipe):
+    """
+    Robust ASR-based SRT generation.
+    Splits text into segments, aligns with audio using Whisper timestamps,
+    and creates a professional SRT file.
+    """
     try:
         sr, waveform = audio_tuple
-        # Normalize to float32 for pipeline
-        waveform_f32 = waveform.astype(np.float32) / 32767.0
+        # Convert to float32 if needed
+        if waveform.dtype != np.float32:
+            waveform = waveform.astype(np.float32)
         
-        # Whisper pipeline expects a dict or numpy array
-        result = pipe({"sampling_rate": sr, "raw": waveform_f32}, return_timestamps="word")
+        # Run Whisper
+        result = pipe(waveform, return_timestamps="word", generate_kwargs={"task": "transcribe"})
         chunks = result.get("chunks", [])
         
-        segments = smart_balanced_split(text)
+        # Alignment logic using smart_balanced_split and align_robust
+        segments, user_clean = smart_balanced_split(text)
+        mapping = align_robust(user_clean, chunks)
         
-        # 1. Global Clock Reconstruction (Fixing the Whisper 30s Wall)
-        abs_chunks = []
-        offset = 0.0
-        last_chunk_e = 0.0
-        for c in chunks:
-            s, e = c["timestamp"]
-            if s is None: s = last_chunk_e
-            if e is None: e = s + 0.5
-            
-            # Reset Detection
-            if (s + offset) < (last_chunk_e - 1.0) and s < 10.0:
-                while (s + offset) < (last_chunk_e - 1.0):
-                    offset += 30.0
-            
-            abs_s = s + offset
-            abs_e = e + offset
-            
-            # Monotonicity Enforcement
-            if abs_s < last_chunk_e: abs_s = last_chunk_e
-            if abs_e < abs_s: abs_e = abs_s + 0.1
-            
-            c["timestamp"] = (abs_s, abs_e)
-            abs_chunks.append(c)
-            last_chunk_e = abs_e
-            
-        import difflib
-        user_clean = [re.sub(r'[^\w\u4e00-\u9fff]', '', s).lower() for s in segments]
-        whisper_full_text = "".join([c["text"] for c in abs_chunks])
-        whisper_clean = re.sub(r'[^\w\u4e00-\u9fff]', '', whisper_full_text).lower()
-        
-        char_times = []
-        for c in abs_chunks:
-            txt = c["text"]
-            s, e = c["timestamp"]
-            c_clean = re.sub(r'[^\w\u4e00-\u9fff]', '', txt).lower()
-            if not c_clean: continue
-            duration = e - s
-            for i in range(len(c_clean)):
-                char_times.append((s + (i / len(c_clean)) * duration, s + ((i + 1) / len(c_clean)) * duration))
-                
-        user_full_clean = "".join(user_clean)
-        matcher = difflib.SequenceMatcher(None, user_full_clean, whisper_clean)
-        
-        mapping = [None] * len(user_full_clean)
-        last_w_end = 0
-        for u_s, w_s, length in matcher.get_matching_blocks():
-            if w_s < last_w_end: continue
-            for i in range(length):
-                if w_s + i < len(char_times):
-                    mapping[u_s + i] = char_times[w_s + i]
-            last_w_end = w_s + length
-                    
-        matched_indices = [i for i, x in enumerate(mapping) if x is not None]
-        if not matched_indices:
-            total_dur = char_times[-1][1] if char_times else 10.0
-            for i in range(len(mapping)):
-                mapping[i] = ((i / len(mapping)) * total_dur, ((i + 1) / len(mapping)) * total_dur)
-        else:
-            first_idx = matched_indices[0]
-            first_s = mapping[first_idx][0]
-            for i in range(first_idx):
-                mapping[i] = ((i / first_idx) * first_s if first_idx > 0 else 0, ((i + 1) / first_idx) * first_s if first_idx > 0 else 0)
-            for j in range(len(matched_indices) - 1):
-                idx1, idx2 = matched_indices[j], matched_indices[j+1]
-                t1, t2 = mapping[idx1][1], mapping[idx2][0]
-                gap_len = idx2 - idx1 - 1
-                if gap_len > 0:
-                    for k in range(1, gap_len + 1):
-                        s_interp = t1 + ((k-1) / gap_len) * (t2 - t1)
-                        e_interp = t1 + (k / gap_len) * (t2 - t1)
-                        mapping[idx1 + k] = (s_interp, e_interp)
-            last_idx = matched_indices[-1]
-            last_e = mapping[last_idx][1]
-            total_end = char_times[-1][1] if char_times else last_e + 1.0
-            rem_len = len(mapping) - 1 - last_idx
-            if rem_len > 0:
-                for k in range(1, rem_len + 1):
-                    s_interp = last_e + ((k-1) / rem_len) * (total_end - last_e)
-                    e_interp = last_e + (k / rem_len) * (total_end - last_e)
-                    mapping[last_idx + k] = (s_interp, e_interp)
-                    
         srt_output = ""
         curr = 0
         for i, (seg_text, s_clean) in enumerate(zip(segments, user_clean), 1):
             if not s_clean: continue
+            if curr >= len(mapping): break
+            
             start_time = mapping[curr][0]
-            end_time = mapping[curr + len(s_clean) - 1][1]
+            end_idx = min(curr + len(s_clean) - 1, len(mapping) - 1)
+            end_time = mapping[end_idx][1]
+            
             srt_output += f"{i}\n{format_timestamp(start_time)} --> {format_timestamp(end_time)}\n{seg_text}\n\n"
             curr += len(s_clean)
         
-        if zh_conv != "None":
-            try:
-                from opencc import OpenCC
-                cc = OpenCC('t2s' if zh_conv == 'T2S' else 's2t')
-                srt_output = cc.convert(srt_output)
-            except: pass
-
         return srt_output.strip()
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return f"SRT Error: {e}"
 
-def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guidance, denoise, speed, duration, pp, po, mode, gen_srt=True, convert_punc=True, zh_conv="None"):
+def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guidance, denoise, speed, duration, pp, po, mode, gen_srt=True, convert_punc=True):
     if not text or not text.strip():
-        yield None, "", None, "Text is required."
+        yield None, "", gr.update(visible=False), "Text is required."
         return
     
     # 1. Punctuation Unification
@@ -476,8 +401,8 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
         
         for curr, total, chunk_wave in gen_iter:
             if chunk_wave is None:
-                # Progress update
-                yield None, "", None, f"⏳ Generation in progress... Synthesizing TTS (Chunk {curr}/{total})"
+                # Progress update - Yielding gr.update() for components that shouldn't refresh
+                yield gr.update(), gr.update(), gr.update(), f"⏳ Generation in progress... Synthesizing TTS (Chunk {curr}/{total})"
             else:
                 # Final chunk returned
                 full_waveform = chunk_wave
@@ -489,10 +414,10 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
         # 3. SRT Generation
         srt_content = ""
         if gen_srt:
-            yield None, "", None, f"⏳ TTS Done ({duration_s:.1f}s). Running ASR for alignment..."
-            srt_content = text_to_srt_whisper(text, audio_tuple, WHISPER_PIPE, zh_conv=zh_conv)
+            yield gr.update(), gr.update(), gr.update(), f"⏳ TTS Done ({duration_s:.1f}s). Running ASR for alignment..."
+            srt_content = text_to_srt_whisper(text, audio_tuple, WHISPER_PIPE)
             # Show Subtitles immediately
-            yield None, srt_content, None, f"⏳ ASR Done. Finalizing files..."
+            yield gr.update(), srt_content, gr.update(), f"⏳ ASR Done. Finalizing files..."
         
         # 4. Final Result Preparation
         slug = get_slug(text)
@@ -514,8 +439,8 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
             with zipfile.ZipFile(zip_path, "w") as zipf:
                 zipf.write(audio_path, arcname=f"{slug}.wav")
                 zipf.write(srt_path, arcname=f"{slug}.srt")
-            # Show ZIP Button
-            yield None, srt_content, zip_path, f"⏳ Files ready. Finishing..."
+            # Show ZIP Button early
+            yield gr.update(), srt_content, gr.update(value=zip_path, visible=True), f"⏳ Files ready. Finishing..."
         else:
             zip_path = audio_path
 
@@ -524,12 +449,12 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
         status_msg = f"✅ Done in {elapsed:.1f}s | {duration_s:.1f}s Audio | {tokens} Chars"
         
         # Final yield shows Audio Player
-        yield audio_path, srt_content, zip_path, status_msg
+        yield audio_path, srt_content, gr.update(value=zip_path, visible=True), status_msg
         
     except Exception as e:
         import traceback
         traceback.print_exc()
-        yield None, "", None, f"Error: {e}"
+        yield gr.update(), "", gr.update(visible=False), f"Error: {e}"
 
 # ---------------------------------------------------------------------------
 # UI Construction
@@ -573,7 +498,6 @@ def build_app(model_path=None, whisper_path=None):
                             vc_steps = gr.Slider(4, 64, value=32, step=4, label="Inference Steps")
                             vc_gs = gr.Slider(0, 5, value=2.0, step=0.1, label="Guidance Scale")
                             vc_dn = gr.Checkbox(label="Denoise", value=True)
-                            vc_zh_conv = gr.Dropdown(label="Chinese Conversion", choices=["None", "S2T", "T2S"], value="None")
                             vc_pp = gr.Checkbox(label="Clean Ref Audio (Silence Removal)", value=True)
                             vc_po = gr.Checkbox(label="Trim Output Silence", value=True)
                             vc_gen_srt = gr.Checkbox(label="Generate Subtitles (SRT)", value=True)
@@ -618,7 +542,6 @@ def build_app(model_path=None, whisper_path=None):
                             vd_po = gr.Checkbox(label="Trim Output Silence", value=True)
                             vd_gen_srt = gr.Checkbox(label="Generate Subtitles (SRT)", value=True)
                             vd_punc = gr.Checkbox(label="Convert Punctuation", value=True)
-                            vd_zh_conv = gr.Dropdown(label="Chinese Conversion", choices=["None", "S2T", "T2S"], value="None")
 
                         vd_btn = gr.Button("Create Voice", variant="primary")
 
@@ -648,12 +571,12 @@ def build_app(model_path=None, whisper_path=None):
                 return f"Error during transcription: {e}"
 
         def vc_handler(*args):
-            # 0:text, 1:lang, 2:ref_audio, 3:ref_text, 4:instruct, 5:steps, 6:gs, 7:denoise, 8:punc, 9:zh, 10:speed, 11:dur, 12:pp, 13:po, 14:gen_srt
+            # 0:text, 1:lang, 2:ref_audio, 3:ref_text, 4:instruct, 5:steps, 6:gs, 7:denoise, 8:punc, 9:speed, 10:dur, 11:pp, 12:po, 13:gen_srt
             for res in generate_core(
                 text=args[0], language=args[1], ref_audio=args[2], ref_text=args[3], 
                 instruct=args[4], num_step=args[5], guidance=args[6], denoise=args[7], 
-                convert_punc=args[8], zh_conv=args[9], speed=args[10], duration=args[11], 
-                pp=args[12], po=args[13], mode="clone", gen_srt=args[14]
+                convert_punc=args[8], speed=args[9], duration=args[10], 
+                pp=args[11], po=args[12], mode="clone", gen_srt=args[13]
             ):
                 yield res
             
@@ -705,20 +628,20 @@ def build_app(model_path=None, whisper_path=None):
 
         vc_btn.click(
             vc_handler,
-            inputs=[vc_text, vc_lang, vc_ref, vc_ref_text, vc_instruct, vc_steps, vc_gs, vc_dn, vc_punc, vc_zh_conv, vc_speed, vc_dur, vc_pp, vc_po, vc_gen_srt],
+            inputs=[vc_text, vc_lang, vc_ref, vc_ref_text, vc_instruct, vc_steps, vc_gs, vc_dn, vc_punc, vc_speed, vc_dur, vc_pp, vc_po, vc_gen_srt],
             outputs=[vc_audio, vc_srt, vc_dl, vc_status]
-        ).then(lambda dl: gr.update(visible=bool(dl)), inputs=[vc_dl], outputs=[vc_dl])
+        )
 
-        def vd_handler(text, lang, speed, dur, steps, gs, dn, punc, zh, po, gen_srt, *groups):
+        def vd_handler(text, lang, speed, dur, steps, gs, dn, punc, po, gen_srt, *groups):
             instruct = ", ".join([g for g in groups if g != "Auto"])
-            for res in generate_core(text, lang, None, None, instruct, steps, gs, dn, speed, dur, False, po, "design", gen_srt, punc, zh):
+            for res in generate_core(text, lang, None, None, instruct, steps, gs, dn, speed, dur, False, po, "design", gen_srt, punc):
                 yield res
 
         vd_btn.click(
             vd_handler,
-            inputs=[vd_text, vd_lang, vd_speed, vd_dur, vd_steps, vd_gs, vd_dn, vd_punc, vd_zh_conv, vd_po, vd_gen_srt] + vd_groups,
+            inputs=[vd_text, vd_lang, vd_speed, vd_dur, vd_steps, vd_gs, vd_dn, vd_punc, vd_po, vd_gen_srt] + vd_groups,
             outputs=[vd_audio, vd_srt, vd_dl, vd_status]
-        ).then(lambda dl: gr.update(visible=bool(dl)), inputs=[vc_dl], outputs=[vc_dl])
+        )
 
         demo.load(None, None, None, js=_LYRICS_JS)
         
