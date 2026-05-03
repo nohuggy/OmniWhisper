@@ -314,7 +314,7 @@ def text_to_srt_whisper(text, audio_tuple, pipe, language="zh"):
     except Exception as e:
         return f"SRT Error: {e}"
 
-def generate_core(text, language, ref_audio, instruct, num_step, guidance, denoise, speed, duration, pp, po, mode, gen_srt=True):
+def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guidance, denoise, speed, duration, pp, po, mode, gen_srt=True):
     if not text or not text.strip():
         return None, "", None, "Text is required."
     
@@ -325,6 +325,7 @@ def generate_core(text, language, ref_audio, instruct, num_step, guidance, denoi
         audio_tuple = TTS_ENGINE.generate(
             text=text.strip(),
             ref_audio=ref_audio,
+            ref_text=ref_text,
             instruct=instruct,
             language=lang_code,
             num_step=num_step,
@@ -559,7 +560,7 @@ def build_app(model_path=None, whisper_path=None):
 
         def vd_handler(text, lang, speed, dur, steps, gs, dn, po, gen_srt, *groups):
             instruct = ", ".join([g for g in groups if g != "Auto"])
-            return generate_core(text, lang, None, instruct, steps, gs, dn, speed, dur, False, po, "design", gen_srt)
+            return generate_core(text, lang, None, None, instruct, steps, gs, dn, speed, dur, False, po, "design", gen_srt)
 
         vd_btn.click(
             vd_handler,
