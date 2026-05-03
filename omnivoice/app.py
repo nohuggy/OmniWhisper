@@ -350,14 +350,18 @@ def text_to_srt_whisper(text, audio_tuple, pipe, language="zh"):
             if s is None: s = last_chunk_e
             if e is None: e = s + 0.5
             
-            # Reset detection: If start time jumps back significantly near a 30s boundary
-            if s < last_chunk_e - 2.0 and s < 5.0:
-                offset += 30.0 
+            # 1. Reset Detection: If the current chunk (with current offset) 
+            # is significantly behind the last known end time, it's a window reset.
+            if (s + offset) < (last_chunk_e - 1.0) and s < 10.0:
+                # Accumulate offset in 30s increments (Whisper's window size)
+                # while we are still behind the timeline.
+                while (s + offset) < (last_chunk_e - 1.0):
+                    offset += 30.0
             
             abs_s = s + offset
             abs_e = e + offset
             
-            # Ensure absolute monotonicity to prevent 'jumpy' highlights
+            # 2. Monotonicity Enforcement: Ensure timestamps never go backwards
             if abs_s < last_chunk_e: abs_s = last_chunk_e
             if abs_e < abs_s: abs_e = abs_s + 0.1
             
