@@ -334,6 +334,8 @@ def text_to_srt_whisper(text, audio_tuple, pipe, language="zh"):
         result = pipe({"sampling_rate": sr, "raw": waveform_f32}, return_timestamps="word")
         chunks = result.get("chunks", [])
         
+        segments = smart_balanced_split(text)
+        
         # 1. Global Clock Reconstruction (Fixing the Whisper 30s Wall)
         # Whisper pipeline can reset timestamps or drift every 30s. We detect these resets
         # and accumulate an offset to maintain an absolute timeline.
