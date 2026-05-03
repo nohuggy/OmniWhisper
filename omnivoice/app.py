@@ -330,7 +330,13 @@ def text_to_srt_whisper(text, audio_tuple, pipe, language="zh"):
         waveform_f32 = waveform.astype(np.float32) / 32767.0
         
         # Whisper pipeline expects a dict or numpy array
-        result = pipe({"sampling_rate": sr, "raw": waveform_f32}, return_timestamps="word")
+        # CRITICAL: Must use chunk_length_s=30 to bypass the 30-second Whisper wall and prevent massive drift
+        result = pipe(
+            {"sampling_rate": sr, "raw": waveform_f32}, 
+            return_timestamps=True, 
+            chunk_length_s=30, 
+            batch_size=1
+        )
         chunks = result.get("chunks", [])
         if not chunks:
             return "Whisper failed to produce timestamps."
