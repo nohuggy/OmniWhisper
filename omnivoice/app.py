@@ -280,28 +280,73 @@ def text_to_srt_whisper(text, audio_tuple, pipe, language="zh"):
             
         segments = smart_balanced_split(text)
         
-        def clean_len(s):
-            return len(re.sub(r'\s+|[^\w\u4e00-\u9fff]', '', s))
-            
+        import difflib
+        user_clean = [re.sub(r'[^\w\u4e00-\u9fff]', '', s).lower() for s in segments]
+        whisper_full_text = "".join([c["text"] for c in chunks])
+        whisper_clean = re.sub(r'[^\w\u4e00-\u9fff]', '', whisper_full_text).lower()
+        
+        char_times = []
+        last_s = 0.0
+        for c in chunks:
+            txt = c["text"]
+            s, e = c["timestamp"]
+            if s is None: s = last_s
+            if e is None: e = s + 0.5
+            last_s = e
+            c_clean = re.sub(r'[^\w\u4e00-\u9fff]', '', txt).lower()
+            if not c_clean: continue
+            duration = e - s
+            for i in range(len(c_clean)):
+                char_times.append((s + (i / len(c_clean)) * duration, s + ((i + 1) / len(c_clean)) * duration))
+                
+        user_full_clean = "".join(user_clean)
+        matcher = difflib.SequenceMatcher(None, user_full_clean, whisper_clean)
+        
+        mapping = [None] * len(user_full_clean)
+        for u_s, w_s, length in matcher.get_matching_blocks():
+            for i in range(length):
+                if w_s + i < len(char_times):
+                    mapping[u_s + i] = char_times[w_s + i]
+                    
+        matched_indices = [i for i, x in enumerate(mapping) if x is not None]
+        if not matched_indices:
+            total_dur = char_times[-1][1] if char_times else 10.0
+            for i in range(len(mapping)):
+                mapping[i] = ((i / len(mapping)) * total_dur, ((i + 1) / len(mapping)) * total_dur)
+        else:
+            first_idx = matched_indices[0]
+            first_s = mapping[first_idx][0]
+            for i in range(first_idx):
+                mapping[i] = ((i / first_idx) * first_s if first_idx > 0 else 0, ((i + 1) / first_idx) * first_s if first_idx > 0 else 0)
+                
+            for j in range(len(matched_indices) - 1):
+                idx1, idx2 = matched_indices[j], matched_indices[j+1]
+                t1, t2 = mapping[idx1][1], mapping[idx2][0]
+                gap_len = idx2 - idx1 - 1
+                if gap_len > 0:
+                    for k in range(1, gap_len + 1):
+                        s_interp = t1 + ((k-1) / gap_len) * (t2 - t1)
+                        e_interp = t1 + (k / gap_len) * (t2 - t1)
+                        mapping[idx1 + k] = (s_interp, e_interp)
+                        
+            last_idx = matched_indices[-1]
+            last_e = mapping[last_idx][1]
+            total_end = char_times[-1][1] if char_times else last_e + 1.0
+            rem_len = len(mapping) - 1 - last_idx
+            if rem_len > 0:
+                for k in range(1, rem_len + 1):
+                    s_interp = last_e + ((k-1) / rem_len) * (total_end - last_e)
+                    e_interp = last_e + (k / rem_len) * (total_end - last_e)
+                    mapping[last_idx + k] = (s_interp, e_interp)
+                    
         srt_output = ""
-        chunk_idx = 0
-        for i, seg_text in enumerate(segments, 1):
-            target_len = clean_len(seg_text)
-            if target_len == 0: continue
-            
-            start_time, end_time = None, None
-            accumulated_len = 0
-            
-            while chunk_idx < len(chunks) and accumulated_len < target_len:
-                c = chunks[chunk_idx]
-                if start_time is None: start_time = c["timestamp"][0]
-                end_time = c["timestamp"][1]
-                accumulated_len += clean_len(c["text"])
-                chunk_idx += 1
-            
-            if start_time is not None:
-                if end_time is None: end_time = start_time + 1.0
-                srt_output += f"{i}\n{format_timestamp(start_time)} --> {format_timestamp(end_time)}\n{seg_text}\n\n"
+        curr = 0
+        for i, (seg_text, s_clean) in enumerate(zip(segments, user_clean), 1):
+            if not s_clean: continue
+            start_time = mapping[curr][0]
+            end_time = mapping[curr + len(s_clean) - 1][1]
+            srt_output += f"{i}\n{format_timestamp(start_time)} --> {format_timestamp(end_time)}\n{seg_text}\n\n"
+            curr += len(s_clean)
         
         # Convert to Simplified Chinese
         try:
