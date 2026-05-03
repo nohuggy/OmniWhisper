@@ -34,10 +34,12 @@ class TTSEngine:
             self.dtype = dtype
 
         print(f"Initializing OmniVoice TTS Engine on {self.device} ({self.dtype})...")
+        # Pass asr_model_name so the internal model knows where to find local Whisper for auto-transcription
         self.model = OmniVoice.from_pretrained(
             model_path, 
             device_map=self.device,
-            torch_dtype=self.dtype
+            torch_dtype=self.dtype,
+            asr_model_name=os.path.join(os.path.dirname(model_path), "whisper-large-v3-turbo") if os.path.exists(os.path.join(os.path.dirname(model_path), "whisper-large-v3-turbo")) else "openai/whisper-large-v3-turbo"
         )
         self.sampling_rate = self.model.sampling_rate
 
@@ -66,9 +68,11 @@ class TTSEngine:
             kw["duration"] = float(duration)
 
         if ref_audio:
+            # Force None if ref_text is empty or whitespace to trigger internal auto-transcription
+            clean_ref_text = ref_text.strip() if (ref_text and ref_text.strip()) else None
             kw["voice_clone_prompt"] = self.model.create_voice_clone_prompt(
                 ref_audio=ref_audio,
-                ref_text=ref_text,
+                ref_text=clean_ref_text,
             )
 
         if instruct and instruct.strip():

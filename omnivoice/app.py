@@ -281,8 +281,7 @@ _LYRICS_JS = """
                     currentTime = parseTimeStr(matches[0]);
                     // Only count as "playing" if time is > 0 and changing
                     if (currentTime === viewer._lastTime) {
-                        // Increase timeout to 2000ms because UI timer only updates once per second
-                        if (Date.now() - (viewer._lastTimeUpdate || 0) > 2000) {
+                        if (Date.now() - (viewer._lastTimeUpdate || 0) > 1000) {
                             currentTime = -1; // Assume paused
                         }
                     } else {
@@ -329,24 +328,8 @@ def text_to_srt_whisper(text, audio_tuple, pipe, language="zh"):
         # Normalize to float32 for pipeline
         waveform_f32 = waveform.astype(np.float32) / 32767.0
         
-        # Whisper strictly requires 1D mono audio. Gradio often returns 2D stereo (frames, channels).
-        if waveform_f32.ndim > 1:
-            waveform_f32 = waveform_f32.mean(axis=1)
-            
-        import torch
-        import torchaudio
-        if sr != 16000:
-            waveform_t = torch.from_numpy(waveform_f32).float()
-            waveform_t = torchaudio.functional.resample(waveform_t, sr, 16000)
-            waveform_f32 = waveform_t.numpy()
-            
-        # CRITICAL: Must use chunk_length_s=30 and pass bare numpy array to bypass the 30-second Whisper wall
-        result = pipe(
-            waveform_f32, 
-            return_timestamps=True, 
-            chunk_length_s=30, 
-            batch_size=1
-        )
+        # Whisper pipeline expects a dict or numpy array
+        result = pipe({"sampling_rate": sr, "raw": waveform_f32}, return_timestamps="word")
         chunks = result.get("chunks", [])
         if not chunks:
             return "Whisper failed to produce timestamps."
@@ -376,10 +359,15 @@ def text_to_srt_whisper(text, audio_tuple, pipe, language="zh"):
         matcher = difflib.SequenceMatcher(None, user_full_clean, whisper_clean)
         
         mapping = [None] * len(user_full_clean)
+        last_w_end = 0
         for u_s, w_s, length in matcher.get_matching_blocks():
+            # Monotonicity check: Skip blocks that jump backwards in the audio timeline
+            if w_s < last_w_end:
+                continue
             for i in range(length):
                 if w_s + i < len(char_times):
                     mapping[u_s + i] = char_times[w_s + i]
+            last_w_end = w_s + length
                     
         matched_indices = [i for i, x in enumerate(mapping) if x is not None]
         if not matched_indices:
