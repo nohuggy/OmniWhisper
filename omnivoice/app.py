@@ -279,24 +279,24 @@ def text_to_srt_whisper(text, audio_tuple, pipe, language="zh"):
             return "Whisper failed to produce timestamps."
             
         segments = smart_balanced_split(text)
-        seg_token_counts = []
-        all_words = []
-        for s in segments:
-            tokens = re.findall(r"[\u4e00-\u9fff]|[a-zA-Z0-9]+", s)
-            seg_token_counts.append(len(tokens))
-            all_words.extend(tokens)
+        
+        def clean_len(s):
+            return len(re.sub(r'\s+|[^\w\u4e00-\u9fff]', '', s))
             
         srt_output = ""
         chunk_idx = 0
-        for i, (seg_text, requested_count) in enumerate(zip(segments, seg_token_counts), 1):
-            if requested_count == 0: continue
+        for i, seg_text in enumerate(segments, 1):
+            target_len = clean_len(seg_text)
+            if target_len == 0: continue
+            
             start_time, end_time = None, None
-            found = 0
-            while chunk_idx < len(chunks) and found < requested_count:
+            accumulated_len = 0
+            
+            while chunk_idx < len(chunks) and accumulated_len < target_len:
                 c = chunks[chunk_idx]
                 if start_time is None: start_time = c["timestamp"][0]
                 end_time = c["timestamp"][1]
-                found += 1
+                accumulated_len += clean_len(c["text"])
                 chunk_idx += 1
             
             if start_time is not None:
@@ -414,7 +414,7 @@ def build_app(model_path=None, whisper_path=None):
                             vc_speed = gr.Slider(0.5, 2.0, value=0.9, step=0.05, label="Speed")
                             vc_dur = gr.Number(label="Fixed Duration (sec)", value=0)
                             vc_steps = gr.Slider(4, 64, value=32, step=4, label="Inference Steps")
-                            vc_gs = gr.Slider(0, 5, value=0.5, step=0.1, label="Guidance Scale")
+                            vc_gs = gr.Slider(0, 5, value=2.0, step=0.1, label="Guidance Scale")
                             vc_dn = gr.Checkbox(label="Denoise", value=True)
                             vc_pp = gr.Checkbox(label="Clean Ref Audio (Silence Removal)", value=True)
                             vc_po = gr.Checkbox(label="Trim Output Silence", value=True)
@@ -454,7 +454,7 @@ def build_app(model_path=None, whisper_path=None):
                             vd_speed = gr.Slider(0.5, 2.0, value=0.9, step=0.05, label="Speed")
                             vd_dur = gr.Number(label="Fixed Duration (sec)", value=0)
                             vd_steps = gr.Slider(4, 64, value=32, step=4, label="Inference Steps")
-                            vd_gs = gr.Slider(0, 5, value=0.5, step=0.1, label="Guidance Scale")
+                            vd_gs = gr.Slider(0, 5, value=2.0, step=0.1, label="Guidance Scale")
                             vd_dn = gr.Checkbox(label="Denoise", value=True)
                             vd_po = gr.Checkbox(label="Trim Output Silence", value=True)
                             vd_gen_srt = gr.Checkbox(label="Generate Subtitles (SRT)", value=True)
