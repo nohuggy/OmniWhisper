@@ -489,7 +489,7 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
         # 3. SRT Generation
         srt_content = ""
         if gen_srt:
-            yield None, "", None, f"⏳ TTS Done ({duration_s:.1fs}). Running ASR for alignment..."
+            yield None, "", None, f"⏳ TTS Done ({duration_s:.1f}s). Running ASR for alignment..."
             srt_content = text_to_srt_whisper(text, audio_tuple, WHISPER_PIPE, zh_conv=zh_conv)
             # Show Subtitles immediately
             yield None, srt_content, None, f"⏳ ASR Done. Finalizing files..."
