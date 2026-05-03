@@ -282,13 +282,16 @@ _LYRICS_JS = """
                 if (matches && matches.length > 0) {
                     var parsed = parseTimeStr(matches[0]);
                     
-                    // GLITCH PROTECTION: If current time suddenly jumps back to 0 
-                    // while audio was far ahead (e.g. at 1min mark), ignore it.
-                    if (parsed === 0 && (viewer._lastValidTime || 0) > 2) {
+                    // ROBUST GLITCH PROTECTION:
+                    // If the timer suddenly jumps backwards by more than 5 seconds 
+                    // while moving forward (e.g. at 1min or 2min roll-over), ignore it.
+                    var delta = (viewer._lastValidTime || 0) - parsed;
+                    if (delta > 5 && (Date.now() - (viewer._lastUpdateTS || 0)) < 2000) {
                         currentTime = viewer._lastValidTime;
                     } else if (parsed >= 0) {
                         currentTime = parsed;
                         viewer._lastValidTime = parsed;
+                        viewer._lastUpdateTS = Date.now();
                     }
                 }
             }
