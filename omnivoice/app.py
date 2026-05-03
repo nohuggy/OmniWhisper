@@ -338,8 +338,9 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
         )
         
         elapsed = time.time() - start_time
-        word_count = len(re.findall(r"[\u4e00-\u9fff]|[a-zA-Z0-9]+", text))
-        status_msg = f"Done in {elapsed:.1f}s | {word_count} tokens"
+        tokens = len(text.strip())
+        words = len(re.findall(r"[\u4e00-\u9fff]|[a-zA-Z0-9]+", text))
+        status_msg = f"✅ Done in {elapsed:.1f}s | {tokens} tokens | {words} Words"
         
         # Audio path
         sampling_rate, waveform = audio_tuple
@@ -429,7 +430,7 @@ def build_app(model_path=None, whisper_path=None):
                             vc_srt = gr.Textbox(show_label=False, lines=10, elem_id="vc-srt-text", interactive=False)
                         
                         vc_dl = gr.DownloadButton("📥 Download ZIP (Audio + SRT)", visible=False)
-                        vc_status = gr.Textbox(label="Status", interactive=False, lines=5)
+                        vc_status = gr.Textbox(label="Status", interactive=False, lines=3)
 
             # VOICE DESIGN TAB
             with gr.TabItem("Voice Design"):
@@ -468,7 +469,7 @@ def build_app(model_path=None, whisper_path=None):
                             vd_srt = gr.Textbox(show_label=False, lines=10, elem_id="vd-srt-text", interactive=False)
                         
                         vd_dl = gr.DownloadButton("📥 Download ZIP (Audio + SRT)", visible=False)
-                        vd_status = gr.Textbox(label="Status", interactive=False, lines=5)
+                        vd_status = gr.Textbox(label="Status", interactive=False, lines=3)
 
         # Event Handlers
         def transcribe_ref(audio):
@@ -486,10 +487,9 @@ def build_app(model_path=None, whisper_path=None):
                 return f"Error during transcription: {e}"
 
         def vc_handler(*args):
-            # args: text, lang, ref_audio, ref_text, instruct, steps, gs, denoise, speed, dur, pp, po, gen_srt
-            # Mapping:
             # 0:text, 1:lang, 2:ref_audio, 3:ref_text, 4:instruct, 5:steps, 6:gs, 7:denoise, 8:speed, 9:dur, 10:pp, 11:po, 12:gen_srt
-            return generate_core(
+            yield None, "", None, "⏳ Generation in progress... Synthesizing audio, please wait."
+            result = generate_core(
                 text=args[0], 
                 language=args[1], 
                 ref_audio=args[2], 
@@ -505,6 +505,7 @@ def build_app(model_path=None, whisper_path=None):
                 mode="clone", 
                 gen_srt=args[12]
             )
+            yield result
             
         def process_ref_zip(zip_file):
             if not zip_file: return None, ""
@@ -560,7 +561,9 @@ def build_app(model_path=None, whisper_path=None):
 
         def vd_handler(text, lang, speed, dur, steps, gs, dn, po, gen_srt, *groups):
             instruct = ", ".join([g for g in groups if g != "Auto"])
-            return generate_core(text, lang, None, None, instruct, steps, gs, dn, speed, dur, False, po, "design", gen_srt)
+            yield None, "", None, "⏳ Generation in progress... Synthesizing audio, please wait."
+            result = generate_core(text, lang, None, None, instruct, steps, gs, dn, speed, dur, False, po, "design", gen_srt)
+            yield result
 
         vd_btn.click(
             vd_handler,
