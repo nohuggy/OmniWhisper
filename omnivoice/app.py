@@ -281,7 +281,8 @@ _LYRICS_JS = """
                     currentTime = parseTimeStr(matches[0]);
                     // Only count as "playing" if time is > 0 and changing
                     if (currentTime === viewer._lastTime) {
-                        if (Date.now() - (viewer._lastTimeUpdate || 0) > 1000) {
+                        // Increase timeout to 2000ms because UI timer only updates once per second
+                        if (Date.now() - (viewer._lastTimeUpdate || 0) > 2000) {
                             currentTime = -1; // Assume paused
                         }
                     } else {
