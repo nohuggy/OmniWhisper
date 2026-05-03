@@ -412,7 +412,7 @@ class OmniVoice(PreTrainedModel):
                 res_list = list(pipe(fake_preprocess(None), return_timestamps=ts_arg, chunk_length_s=30))
                 res = res_list[0] if res_list else {"text": "", "chunks": []}
                 
-                if res and (isinstance(res, dict) and res.get("chunks")):
+                if ts_arg and res and (isinstance(res, dict) and res.get("chunks")):
                     # Convert to Simplified Chinese if needed
                     try:
                         from opencc import OpenCC

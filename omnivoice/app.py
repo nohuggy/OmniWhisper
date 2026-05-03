@@ -329,6 +329,10 @@ def text_to_srt_whisper(text, audio_tuple, pipe, language="zh"):
         # Normalize to float32 for pipeline
         waveform_f32 = waveform.astype(np.float32) / 32767.0
         
+        # Whisper strictly requires 1D mono audio. Gradio often returns 2D stereo (frames, channels).
+        if waveform_f32.ndim > 1:
+            waveform_f32 = waveform_f32.mean(axis=1)
+            
         # Whisper pipeline expects a dict or numpy array
         # CRITICAL: Must use chunk_length_s=30 to bypass the 30-second Whisper wall and prevent massive drift
         result = pipe(
