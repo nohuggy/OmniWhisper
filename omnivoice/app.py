@@ -333,10 +333,16 @@ def text_to_srt_whisper(text, audio_tuple, pipe, language="zh"):
         if waveform_f32.ndim > 1:
             waveform_f32 = waveform_f32.mean(axis=1)
             
-        # Whisper pipeline expects a dict or numpy array
-        # CRITICAL: Must use chunk_length_s=30 to bypass the 30-second Whisper wall and prevent massive drift
+        import torch
+        import torchaudio
+        if sr != 16000:
+            waveform_t = torch.from_numpy(waveform_f32).float()
+            waveform_t = torchaudio.functional.resample(waveform_t, sr, 16000)
+            waveform_f32 = waveform_t.numpy()
+            
+        # CRITICAL: Must use chunk_length_s=30 and pass bare numpy array to bypass the 30-second Whisper wall
         result = pipe(
-            {"sampling_rate": sr, "raw": waveform_f32}, 
+            waveform_f32, 
             return_timestamps=True, 
             chunk_length_s=30, 
             batch_size=1
