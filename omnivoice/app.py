@@ -168,10 +168,16 @@ button.primary, button.secondary {
     font-size: 1.25em !important;
     background-color: rgba(79, 70, 229, 0.2) !important;
 }
+.lyric-line.past {
+    color: rgba(255, 255, 255, 0.7) !important;
+}
+.hidden-lyrics { display: none !important; }
 """
 
 _LYRICS_JS = """
 () => {
+    console.log('[Lyrics] Script starting (Enhanced Polling Mode)...');
+    
     function parseSRT(raw) {
         if (!raw) return [];
         var blocks = raw.trim().split(/\\n\\n+/);
@@ -196,6 +202,8 @@ _LYRICS_JS = """
             viewer.innerHTML = '<div style="text-align:center;color:#aaa;padding:40px;">No subtitles</div>';
             return;
         }
+        
+        // Initial render if empty or cue count changed
         if (!viewer.children.length || viewer._cueCount !== cues.length) {
             var html = '';
             for (var i = 0; i < cues.length; i++) {
@@ -204,23 +212,49 @@ _LYRICS_JS = """
             viewer.innerHTML = html;
             viewer._cueCount = cues.length;
         }
+
         if (viewer._lastActive === activeIdx) return;
         viewer._lastActive = activeIdx;
+
+        // Update classes incrementally
         var lines = viewer.children;
         for (var i = 0; i < lines.length; i++) {
             var el = lines[i];
             var idx = parseInt(el.getAttribute('data-idx'));
             if (idx === activeIdx) {
                 el.classList.add('active');
+                el.classList.remove('past');
+                
+                // TARGETED SCROLL: Only scroll the viewer, NOT the whole page
                 var targetTop = el.offsetTop - (viewer.offsetHeight / 2) + (el.offsetHeight / 2);
                 viewer.scrollTo({ top: targetTop, behavior: 'smooth' });
-            } else {
+            } else if (idx < activeIdx) {
+                el.classList.add('past');
                 el.classList.remove('active');
+            } else {
+                el.classList.remove('active', 'past');
             }
         }
     }
 
-    var PAIRS = [['vc-audio', 'vc-lyrics', 'vc-srt-text'], ['vd-audio', 'vd-lyrics', 'vd-srt-text']];
+    var PAIRS = [
+        ['vc-audio', 'vc-lyrics', 'vc-srt-text'],
+        ['vd-audio', 'vd-lyrics', 'vd-srt-text']
+    ];
+
+    function getSRT(srtBoxId) {
+        var box = document.getElementById(srtBoxId);
+        if (!box) return '';
+        var ta = box.querySelector('textarea');
+        return ta ? ta.value : '';
+    }
+
+    function parseTimeStr(s) {
+        var p = s.split(':');
+        if (p.length === 2) return parseInt(p[0])*60 + parseFloat(p[1]);
+        if (p.length === 3) return parseInt(p[0])*3600 + parseInt(p[1])*60 + parseFloat(p[2]);
+        return 0;
+    }
 
     function updateLyrics() {
         PAIRS.forEach(function(pair) {
@@ -231,18 +265,39 @@ _LYRICS_JS = """
             if (!audioContainer || !viewer || !rawBox) return;
 
             var currentTime = -1;
+            
+            // Method 1: Hidden Audio Element (Standard)
             var audioEl = audioContainer.querySelector('audio');
             if (audioEl && !audioEl.paused && audioEl.currentTime > 0) {
                 currentTime = audioEl.currentTime;
+            }
+            
+            // Method 2: UI Scraper (For Gradio 5 Waveform / WebAudio)
+            if (currentTime < 0) {
+                var allText = audioContainer.innerText;
+                // Look for patterns like "0:05 / 0:10" or "0:05"
+                var matches = allText.match(/(\\d+:\\d+)/g);
+                if (matches && matches.length > 0) {
+                    currentTime = parseTimeStr(matches[0]);
+                    // Only count as "playing" if time is > 0 and changing
+                    if (currentTime === viewer._lastTime) {
+                        if (Date.now() - (viewer._lastTimeUpdate || 0) > 1000) {
+                            currentTime = -1; // Assume paused
+                        }
+                    } else {
+                        viewer._lastTime = currentTime;
+                        viewer._lastTimeUpdate = Date.now();
+                    }
+                }
             }
 
             if (currentTime >= 0) {
                 if (rawBox.style.display !== 'none') {
                     rawBox.style.display = 'none';
                     viewer.style.display = 'block';
-                    var ta = rawBox.querySelector('textarea');
-                    viewer._cues = parseSRT(ta ? ta.value : '');
+                    viewer._cues = parseSRT(getSRT(srtBoxId));
                 }
+                
                 var cues = viewer._cues || [];
                 var activeIdx = -1;
                 for (var i = 0; i < cues.length; i++) {
@@ -257,6 +312,7 @@ _LYRICS_JS = """
             }
         });
     }
+
     setInterval(updateLyrics, 100);
 }
 """
