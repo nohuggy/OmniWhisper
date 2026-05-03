@@ -35,6 +35,7 @@ class TTSEngine:
 
         print(f"Initializing OmniVoice TTS Engine on {self.device} ({self.dtype})...")
         # Pass asr_model_name so the internal model knows where to find local Whisper for auto-transcription
+        # This prevents the engine from trying to download weights from HuggingFace at runtime.
         self.model = OmniVoice.from_pretrained(
             model_path, 
             device_map=self.device,
@@ -68,7 +69,10 @@ class TTSEngine:
             kw["duration"] = float(duration)
 
         if ref_audio:
-            # Force None if ref_text is empty or whitespace to trigger internal auto-transcription
+            # DEVELOPER NOTE: Gradio Textbox passes "" (empty string) not None when empty.
+            # We must force conversion to None so the underlying model's 'if ref_text is None'
+            # check triggers the internal Whisper auto-transcription fallback. 
+            # Without this, the model uses an empty prompt, causing hallucination/bad audio.
             clean_ref_text = ref_text.strip() if (ref_text and ref_text.strip()) else None
             kw["voice_clone_prompt"] = self.model.create_voice_clone_prompt(
                 ref_audio=ref_audio,

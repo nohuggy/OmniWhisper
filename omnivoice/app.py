@@ -250,10 +250,13 @@ _LYRICS_JS = """
     }
 
     function parseTimeStr(s) {
+        if (!s || s.trim() === "") return -1;
         var p = s.split(':');
-        if (p.length === 2) return parseInt(p[0])*60 + parseFloat(p[1]);
-        if (p.length === 3) return parseInt(p[0])*3600 + parseInt(p[1])*60 + parseFloat(p[2]);
-        return 0;
+        try {
+            if (p.length === 2) return parseInt(p[0])*60 + parseFloat(p[1]);
+            if (p.length === 3) return parseInt(p[0])*3600 + parseInt(p[1])*60 + parseFloat(p[2]);
+        } catch(e) {}
+        return -1;
     }
 
     function updateLyrics() {
@@ -275,18 +278,17 @@ _LYRICS_JS = """
             // Method 2: UI Scraper (For Gradio 5 Waveform / WebAudio)
             if (currentTime < 0) {
                 var allText = audioContainer.innerText;
-                // Look for patterns like "0:05 / 0:10" or "0:05"
                 var matches = allText.match(/(\\d+:\\d+)/g);
                 if (matches && matches.length > 0) {
-                    currentTime = parseTimeStr(matches[0]);
-                    // Only count as "playing" if time is > 0 and changing
-                    if (currentTime === viewer._lastTime) {
-                        if (Date.now() - (viewer._lastTimeUpdate || 0) > 1000) {
-                            currentTime = -1; // Assume paused
-                        }
-                    } else {
-                        viewer._lastTime = currentTime;
-                        viewer._lastTimeUpdate = Date.now();
+                    var parsed = parseTimeStr(matches[0]);
+                    
+                    // GLITCH PROTECTION: If current time suddenly jumps back to 0 
+                    // while audio was far ahead (e.g. at 1min mark), ignore it.
+                    if (parsed === 0 && (viewer._lastValidTime || 0) > 2) {
+                        currentTime = viewer._lastValidTime;
+                    } else if (parsed >= 0) {
+                        currentTime = parsed;
+                        viewer._lastValidTime = parsed;
                     }
                 }
             }
@@ -330,25 +332,41 @@ def text_to_srt_whisper(text, audio_tuple, pipe, language="zh"):
         
         # Whisper pipeline expects a dict or numpy array
         result = pipe({"sampling_rate": sr, "raw": waveform_f32}, return_timestamps="word")
-        chunks = result.get("chunks", [])
-        if not chunks:
-            return "Whisper failed to produce timestamps."
+        # 1. Global Clock Reconstruction (Fixing the Whisper 30s Wall)
+        # Whisper pipeline can reset timestamps or drift every 30s. We detect these resets
+        # and accumulate an offset to maintain an absolute timeline.
+        abs_chunks = []
+        offset = 0.0
+        last_chunk_e = 0.0
+        for c in chunks:
+            s, e = c["timestamp"]
+            if s is None: s = last_chunk_e
+            if e is None: e = s + 0.5
             
-        segments = smart_balanced_split(text)
-        
+            # Reset detection: If start time jumps back significantly near a 30s boundary
+            if s < last_chunk_e - 2.0 and s < 5.0:
+                offset += 30.0 
+            
+            abs_s = s + offset
+            abs_e = e + offset
+            
+            # Ensure absolute monotonicity to prevent 'jumpy' highlights
+            if abs_s < last_chunk_e: abs_s = last_chunk_e
+            if abs_e < abs_s: abs_e = abs_s + 0.1
+            
+            c["timestamp"] = (abs_s, abs_e)
+            abs_chunks.append(c)
+            last_chunk_e = abs_e
+            
         import difflib
         user_clean = [re.sub(r'[^\w\u4e00-\u9fff]', '', s).lower() for s in segments]
-        whisper_full_text = "".join([c["text"] for c in chunks])
+        whisper_full_text = "".join([c["text"] for c in abs_chunks])
         whisper_clean = re.sub(r'[^\w\u4e00-\u9fff]', '', whisper_full_text).lower()
         
         char_times = []
-        last_s = 0.0
-        for c in chunks:
+        for c in abs_chunks:
             txt = c["text"]
             s, e = c["timestamp"]
-            if s is None: s = last_s
-            if e is None: e = s + 0.5
-            last_s = e
             c_clean = re.sub(r'[^\w\u4e00-\u9fff]', '', txt).lower()
             if not c_clean: continue
             duration = e - s
