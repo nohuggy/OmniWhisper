@@ -282,16 +282,25 @@ _LYRICS_JS = """
                 if (matches && matches.length > 0) {
                     var parsed = parseTimeStr(matches[0]);
                     
-                    // ROBUST GLITCH PROTECTION:
-                    // If the timer suddenly jumps backwards by more than 5 seconds 
-                    // while moving forward (e.g. at 1min or 2min roll-over), ignore it.
+                    // ROBUST GLITCH PROTECTION & ACTIVITY DETECTION:
                     var delta = (viewer._lastValidTime || 0) - parsed;
                     if (delta > 5 && (Date.now() - (viewer._lastUpdateTS || 0)) < 2000) {
                         currentTime = viewer._lastValidTime;
                     } else if (parsed >= 0) {
-                        currentTime = parsed;
-                        viewer._lastValidTime = parsed;
-                        viewer._lastUpdateTS = Date.now();
+                        // Check for motion: if time is same as before, check timeout
+                        if (parsed === viewer._lastMotionTime) {
+                            if (Date.now() - (viewer._lastMotionUpdate || 0) > 1000) {
+                                currentTime = -1; // Assume paused/ended
+                            } else {
+                                currentTime = parsed;
+                            }
+                        } else {
+                            currentTime = parsed;
+                            viewer._lastMotionTime = parsed;
+                            viewer._lastMotionUpdate = Date.now();
+                            viewer._lastValidTime = parsed;
+                            viewer._lastUpdateTS = Date.now();
+                        }
                     }
                 }
             }
