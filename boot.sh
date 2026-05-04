@@ -52,7 +52,6 @@ fi
 
 # 5. Ensure dependencies are satisfied
 echo "📦 Checking dependencies..."
-python3 -m pip install -q opencc-python-reimplemented
 
 # 6. Launch the WebUI
 echo "🌐 Launching WebUI..."

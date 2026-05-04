@@ -84,7 +84,7 @@ def load_engines(model_path=None, whisper_path=None):
         if TTS_ENGINE and hasattr(TTS_ENGINE.model, "_asr_pipe"):
             print("🔄 Injecting shared Whisper pipe into TTS Engine...")
             TTS_ENGINE.model._asr_pipe = WHISPER_PIPE
-            
+
     return TTS_ENGINE, WHISPER_PIPE
 
 # ---------------------------------------------------------------------------
@@ -127,6 +127,13 @@ CSS = """
     margin-left: -1px !important;
     width: fit-content;
 }
+.custom-label svg { width: 14px; height: 14px; background: transparent !important;}
+
+/* Make all buttons bold and consistent */
+button.primary, button.secondary {
+    font-weight: 700 !important;
+    font-family: inherit !important;
+}
 
 .lyrics-viewer {
     height: 260px;
@@ -150,81 +157,179 @@ CSS = """
     color: #fff !important;
     font-weight: 600 !important;
     font-size: 1.25em !important;
-    background-color: rgba(79, 70, 229, 0.4) !important;
+    background-color: rgba(79, 70, 229, 0.2) !important;
 }
+.lyric-line.past {
+    color: rgba(255, 255, 255, 0.7) !important;
+}
+.hidden-lyrics { display: none !important; }
 """
 
 _LYRICS_JS = """
-function() {
-    const setupSync = (prefix) => {
-        const container = document.querySelector(`#${prefix}-audio`);
-        if (!container) return;
+() => {
+    console.log('[Lyrics] Script starting (Enhanced Polling Mode)...');
+    
+    function parseSRT(raw) {
+        if (!raw) return [];
+        var blocks = raw.trim().split(/\\n\\n+/);
+        var cues = [];
+        for (var b = 0; b < blocks.length; b++) {
+            var lines = blocks[b].split('\\n');
+            if (lines.length < 3) continue;
+            var times = lines[1].split(' --> ');
+            if (times.length !== 2) continue;
+            var s = times[0].replace(',','.').split(':');
+            var e = times[1].replace(',','.').split(':');
+            var startSec = parseFloat(s[0])*3600 + parseFloat(s[1])*60 + parseFloat(s[2]);
+            var endSec   = parseFloat(e[0])*3600 + parseFloat(e[1])*60 + parseFloat(e[2]);
+            var txt = lines.slice(2).join(' ');
+            cues.push({start: startSec, end: endSec, text: txt});
+        }
+        return cues;
+    }
 
-        const sync = () => {
-            const audio = container.querySelector('audio');
-            const lyrics = document.getElementById(`${prefix}-lyrics`);
-            const srtBox = document.querySelector(`#${prefix}-srt-text`);
-            const srt = srtBox ? srtBox.querySelector('textarea') : null;
-            if (!audio || !lyrics || !srt || !srt.value) return;
+    function renderLyrics(viewer, cues, activeIdx) {
+        if (!cues.length) {
+            viewer.innerHTML = '<div style="text-align:center;color:#aaa;padding:40px;">No subtitles</div>';
+            return;
+        }
+        
+        // Initial render if empty or cue count changed
+        if (!viewer.children.length || viewer._cueCount !== cues.length) {
+            var html = '';
+            for (var i = 0; i < cues.length; i++) {
+                html += '<div class="lyric-line" data-idx="' + i + '">' + cues[i].text + '</div>';
+            }
+            viewer.innerHTML = html;
+            viewer._cueCount = cues.length;
+        }
 
-            const parseSRT = (raw) => {
-                var blocks = raw.trim().split(/\\n\\n+/);
-                var cues = [];
-                for (var b = 0; b < blocks.length; b++) {
-                    var lines = blocks[b].split('\\n');
-                    if (lines.length < 3) continue;
-                    var times = lines[1].split(' --> ');
-                    if (times.length !== 2) continue;
-                    const parseTime = (s) => {
-                        const p = s.replace(',','.').split(':');
-                        return parseFloat(p[0])*3600 + parseFloat(p[1])*60 + parseFloat(p[2]);
-                    };
-                    cues.push({start: parseTime(times[0]), end: parseTime(times[1]), text: lines.slice(2).join('<br>')});
+        if (viewer._lastActive === activeIdx) return;
+        viewer._lastActive = activeIdx;
+
+        // Update classes incrementally
+        var lines = viewer.children;
+        for (var i = 0; i < lines.length; i++) {
+            var el = lines[i];
+            var idx = parseInt(el.getAttribute('data-idx'));
+            if (idx === activeIdx) {
+                el.classList.add('active');
+                el.classList.remove('past');
+                
+                // TARGETED SCROLL: Only scroll the viewer, NOT the whole page
+                var targetTop = el.offsetTop - (viewer.offsetHeight / 2) + (el.offsetHeight / 2);
+                viewer.scrollTo({ top: targetTop, behavior: 'smooth' });
+            } else if (idx < activeIdx) {
+                el.classList.add('past');
+                el.classList.remove('active');
+            } else {
+                el.classList.remove('active', 'past');
+            }
+        }
+    }
+
+    var PAIRS = [
+        ['vc-audio', 'vc-lyrics', 'vc-srt-text'],
+        ['vd-audio', 'vd-lyrics', 'vd-srt-text']
+    ];
+
+    function getSRT(srtBoxId) {
+        var box = document.getElementById(srtBoxId);
+        if (!box) return '';
+        var ta = box.querySelector('textarea');
+        if (ta) return ta.value;
+        var pt = box.querySelector('.plaintext') || box.querySelector('div[style*="white-space"]');
+        if (pt) return pt.innerText;
+        var label = box.querySelector('label');
+        var text = box.innerText || '';
+        if (label && text.startsWith(label.innerText)) {
+            text = text.substring(label.innerText.length).trim();
+        }
+        return text;
+    }
+
+    function parseTimeStr(s) {
+        if (!s || s.trim() === "") return -1;
+        var p = s.split(':');
+        try {
+            if (p.length === 2) return parseInt(p[0])*60 + parseFloat(p[1]);
+            if (p.length === 3) return parseInt(p[0])*3600 + parseInt(p[1])*60 + parseFloat(p[2]);
+        } catch(e) {}
+        return -1;
+    }
+
+    function updateLyrics() {
+        PAIRS.forEach(function(pair) {
+            var audioId = pair[0], lyricsId = pair[1], srtBoxId = pair[2];
+            var audioContainer = document.getElementById(audioId);
+            var viewer = document.getElementById(lyricsId);
+            var rawBox = document.getElementById(srtBoxId);
+            if (!audioContainer || !viewer || !rawBox) return;
+
+            var currentTime = -1;
+            
+            // Method 1: Hidden Audio Element (Standard)
+            var audioEl = audioContainer.querySelector('audio');
+            if (audioEl && !audioEl.paused && audioEl.currentTime > 0) {
+                currentTime = audioEl.currentTime;
+            }
+            
+            // Method 2: UI Scraper (For Gradio 5 Waveform / WebAudio)
+            if (currentTime < 0) {
+                var allText = audioContainer.innerText;
+                var matches = allText.match(/(\\d+:\\d+)/g);
+                if (matches && matches.length > 0) {
+                    var parsed = parseTimeStr(matches[0]);
+                    
+                    // ROBUST GLITCH PROTECTION & ACTIVITY DETECTION:
+                    var delta = (viewer._lastValidTime || 0) - parsed;
+                    if (delta > 5 && (Date.now() - (viewer._lastUpdateTS || 0)) < 2000) {
+                        currentTime = viewer._lastValidTime;
+                    } else if (parsed >= 0) {
+                        // Check for motion: if time is same as before, check timeout
+                        if (parsed === viewer._lastMotionTime) {
+                            if (Date.now() - (viewer._lastMotionUpdate || 0) > 1000) {
+                                currentTime = -1; // Assume paused/ended
+                            } else {
+                                currentTime = parsed;
+                            }
+                        } else {
+                            currentTime = parsed;
+                            viewer._lastMotionTime = parsed;
+                            viewer._lastMotionUpdate = Date.now();
+                            viewer._lastValidTime = parsed;
+                            viewer._lastUpdateTS = Date.now();
+                        }
+                    }
                 }
-                return cues;
-            };
-
-            const cues = parseSRT(srt.value);
-            if (cues.length > 0) {
-                lyrics.style.display = 'block';
-                if (srtBox) srtBox.style.display = 'none';
             }
 
-            audio.ontimeupdate = () => {
-                const now = audio.currentTime;
-                let html = '';
-                cues.forEach(item => {
-                    const active = now >= item.start && now <= item.end ? 'active' : '';
-                    html += `<div class="lyric-line ${active}">${item.text}</div>`;
-                });
-                lyrics.innerHTML = html;
-                const activeNode = lyrics.querySelector('.active');
-                if (activeNode) activeNode.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            };
-        };
-
-        const observer = new MutationObserver(sync);
-        observer.observe(container, { childList: true, subtree: true });
-        const srtDiv = document.querySelector(`#${prefix}-srt-text`);
-        if (srtDiv) {
-            const ta = srtDiv.querySelector('textarea');
-            if (ta) {
-                const srtObs = new MutationObserver(sync);
-                srtObs.observe(ta, { attributes: true });
+            if (currentTime >= 0) {
+                var srtVal = getSRT(srtBoxId);
+                if (rawBox.style.display !== 'none' || viewer._lastSRT !== srtVal) {
+                    rawBox.style.display = 'none';
+                    viewer.style.display = 'block';
+                    viewer._cues = parseSRT(srtVal);
+                    viewer._lastSRT = srtVal;
+                    viewer._cueCount = -1;
+                }
+                
+                var cues = viewer._cues || [];
+                var activeIdx = -1;
+                for (var i = 0; i < cues.length; i++) {
+                    if (currentTime >= cues[i].start && currentTime < cues[i].end) { activeIdx = i; break; }
+                }
+                renderLyrics(viewer, cues, activeIdx);
+            } else {
+                if (rawBox.style.display === 'none') {
+                    viewer.style.display = 'none';
+                    rawBox.style.display = 'block';
+                }
             }
-        }
-        sync();
-    };
+        });
+    }
 
-    const init = () => {
-        if (document.querySelector('#vc-audio')) {
-            setupSync('vc');
-            setupSync('vd');
-        } else {
-            setTimeout(init, 1000);
-        }
-    };
-    init();
+    setInterval(updateLyrics, 100);
 }
 """
 
@@ -232,33 +337,116 @@ function() {
 # Core Logic
 # ---------------------------------------------------------------------------
 
-def text_to_srt_whisper(text, audio_tuple, pipe):
+def text_to_srt_whisper(text, audio_tuple, pipe, language="zh"):
+    """Generate SRT using Whisper word-level timestamps via pipeline."""
     try:
         sr, waveform = audio_tuple
-        if waveform.dtype != np.float32:
-            waveform = waveform.astype(np.float32)
+        # Normalize to float32 for pipeline
+        waveform_f32 = waveform.astype(np.float32) / 32767.0
         
-        # Run Whisper with word-level timestamps
-        result = pipe(waveform, return_timestamps="word", generate_kwargs={"task": "transcribe"})
+        # Whisper pipeline expects a dict or numpy array
+        result = pipe({"sampling_rate": sr, "raw": waveform_f32}, return_timestamps="word")
         chunks = result.get("chunks", [])
         
-        # Alignment logic
         segments = smart_balanced_split(text)
-        aligned = align_robust(segments, chunks)
         
+        # 1. Global Clock Reconstruction (Fixing the Whisper 30s Wall)
+        abs_chunks = []
+        offset = 0.0
+        last_chunk_e = 0.0
+        for c in chunks:
+            s, e = c["timestamp"]
+            if s is None: s = last_chunk_e
+            if e is None: e = s + 0.5
+            
+            # Reset Detection
+            if (s + offset) < (last_chunk_e - 1.0) and s < 10.0:
+                while (s + offset) < (last_chunk_e - 1.0):
+                    offset += 30.0
+            
+            abs_s = s + offset
+            abs_e = e + offset
+            
+            # Monotonicity Enforcement
+            if abs_s < last_chunk_e: abs_s = last_chunk_e
+            if abs_e < abs_s: abs_e = abs_s + 0.1
+            
+            c["timestamp"] = (abs_s, abs_e)
+            abs_chunks.append(c)
+            last_chunk_e = abs_e
+            
+        import difflib
+        user_clean = [re.sub(r'[^\w\u4e00-\u9fff]', '', s).lower() for s in segments]
+        whisper_full_text = "".join([c["text"] for c in abs_chunks])
+        whisper_clean = re.sub(r'[^\w\u4e00-\u9fff]', '', whisper_full_text).lower()
+        
+        char_times = []
+        for c in abs_chunks:
+            txt = c["text"]
+            s, e = c["timestamp"]
+            c_clean = re.sub(r'[^\w\u4e00-\u9fff]', '', txt).lower()
+            if not c_clean: continue
+            duration = e - s
+            for i in range(len(c_clean)):
+                char_times.append((s + (i / len(c_clean)) * duration, s + ((i + 1) / len(c_clean)) * duration))
+                
+        user_full_clean = "".join(user_clean)
+        matcher = difflib.SequenceMatcher(None, user_full_clean, whisper_clean)
+        
+        mapping = [None] * len(user_full_clean)
+        last_w_end = 0
+        for u_s, w_s, length in matcher.get_matching_blocks():
+            if w_s < last_w_end: continue
+            for i in range(length):
+                if w_s + i < len(char_times):
+                    mapping[u_s + i] = char_times[w_s + i]
+            last_w_end = w_s + length
+                    
+        matched_indices = [i for i, x in enumerate(mapping) if x is not None]
+        if not matched_indices:
+            total_dur = char_times[-1][1] if char_times else 10.0
+            for i in range(len(mapping)):
+                mapping[i] = ((i / len(mapping)) * total_dur, ((i + 1) / len(mapping)) * total_dur)
+        else:
+            first_idx = matched_indices[0]
+            first_s = mapping[first_idx][0]
+            for i in range(first_idx):
+                mapping[i] = ((i / first_idx) * first_s if first_idx > 0 else 0, ((i + 1) / first_idx) * first_s if first_idx > 0 else 0)
+            for j in range(len(matched_indices) - 1):
+                idx1, idx2 = matched_indices[j], matched_indices[j+1]
+                t1, t2 = mapping[idx1][1], mapping[idx2][0]
+                gap_len = idx2 - idx1 - 1
+                if gap_len > 0:
+                    for k in range(1, gap_len + 1):
+                        s_interp = t1 + ((k-1) / gap_len) * (t2 - t1)
+                        e_interp = t1 + (k / gap_len) * (t2 - t1)
+                        mapping[idx1 + k] = (s_interp, e_interp)
+            last_idx = matched_indices[-1]
+            last_e = mapping[last_idx][1]
+            total_end = char_times[-1][1] if char_times else last_e + 1.0
+            rem_len = len(mapping) - 1 - last_idx
+            if rem_len > 0:
+                for k in range(1, rem_len + 1):
+                    s_interp = last_e + ((k-1) / rem_len) * (total_end - last_e)
+                    e_interp = last_e + (k / rem_len) * (total_end - last_e)
+                    mapping[last_idx + k] = (s_interp, e_interp)
+                    
         srt_output = ""
-        for i, ((start_time, end_time), seg_text) in enumerate(zip(aligned, segments), 1):
+        curr = 0
+        for i, (seg_text, s_clean) in enumerate(zip(segments, user_clean), 1):
+            if not s_clean: continue
+            start_time = mapping[curr][0]
+            end_time = mapping[curr + len(s_clean) - 1][1]
             srt_output += f"{i}\n{format_timestamp(start_time)} --> {format_timestamp(end_time)}\n{seg_text}\n\n"
+            curr += len(s_clean)
         
         return srt_output.strip()
     except Exception as e:
-        import traceback
-        traceback.print_exc()
         return f"SRT Error: {e}"
 
 def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guidance, denoise, speed, duration, pp, po, mode, gen_srt=True, convert_punc=True):
     if not text or not text.strip():
-        yield None, "", gr.update(visible=False), "Text is required."
+        yield None, "", None, "Text is required."
         return
     
     # 1. Punctuation Unification
@@ -292,8 +480,10 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
         
         for curr, total, chunk_wave in gen_iter:
             if chunk_wave is None:
-                yield gr.update(), gr.update(), gr.update(), f"⏳ Generation in progress... Synthesizing TTS (Chunk {curr}/{total})"
+                # Progress update
+                yield None, "", None, f"⏳ Generation in progress... Synthesizing TTS (Chunk {curr}/{total})"
             else:
+                # Final chunk returned
                 full_waveform = chunk_wave
                 sr = TTS_ENGINE.sampling_rate
         
@@ -303,14 +493,17 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
         # 3. SRT Generation
         srt_content = ""
         if gen_srt:
-            yield gr.update(), gr.update(), gr.update(), f"⏳ TTS Done ({duration_s:.1f}s). Running ASR for alignment..."
+            yield None, "", None, f"⏳ TTS Done ({duration_s:.1f}s). Running ASR for alignment..."
             srt_content = text_to_srt_whisper(text, audio_tuple, WHISPER_PIPE)
-            yield gr.update(), srt_content, gr.update(), f"⏳ ASR Done. Finalizing files..."
+            # Show Subtitles immediately
+            yield None, srt_content, None, f"⏳ ASR Done. Finalizing files..."
         
         # 4. Final Result Preparation
         slug = get_slug(text)
+        # Use unique timestamp to prevent Gradio 0-min cache issues
         unique_slug = f"{slug}_{int(time.time())}"
         
+        # Use Gradio's temp directory if possible, or outputs/
         os.makedirs("outputs", exist_ok=True)
         audio_path = f"outputs/{unique_slug}.wav"
         sf.write(audio_path, full_waveform, sr)
@@ -325,6 +518,8 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
             with zipfile.ZipFile(zip_path, "w") as zipf:
                 zipf.write(audio_path, arcname=f"{slug}.wav")
                 zipf.write(srt_path, arcname=f"{slug}.srt")
+            # Show ZIP Button
+            yield None, srt_content, zip_path, f"⏳ Files ready. Finishing..."
         else:
             zip_path = audio_path
 
@@ -332,13 +527,13 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
         tokens = len(text.strip())
         status_msg = f"✅ Done in {elapsed:.1f}s | {duration_s:.1f}s Audio | {tokens} Chars"
         
-        # Final yield: Show everything at once to prevent double-loading flicker
-        yield audio_path, srt_content, gr.update(value=zip_path, visible=True), status_msg
+        # Final yield shows Audio Player
+        yield audio_path, srt_content, zip_path, status_msg
         
     except Exception as e:
         import traceback
         traceback.print_exc()
-        yield gr.update(), "", gr.update(visible=False), f"Error: {e}"
+        yield None, "", None, f"Error: {e}"
 
 # ---------------------------------------------------------------------------
 # UI Construction
@@ -361,7 +556,7 @@ def build_app(model_path=None, whisper_path=None):
                         vc_ref_text = gr.Textbox(
                             label="Reference Text", 
                             lines=2, 
-                            placeholder="Transcript of reference audio. Click 'Trans Ref' to process."
+                            placeholder="Transcript of reference audio. Click 'Transcribe' to process."
                         )
                         
                         with gr.Row():
@@ -375,15 +570,16 @@ def build_app(model_path=None, whisper_path=None):
                                 placeholder="e.g. 'male, high pitch' or '男，河南话'",
                                 lines=1
                             )
+
                             vc_lang = gr.Dropdown(label="Language", choices=_LANG_DISPLAY, value="Auto")
                             vc_speed = gr.Slider(0.5, 2.0, value=0.9, step=0.05, label="Speed")
                             vc_dur = gr.Number(label="Fixed Duration (sec)", value=0)
                             vc_steps = gr.Slider(4, 64, value=32, step=4, label="Inference Steps")
                             vc_gs = gr.Slider(0, 5, value=2.0, step=0.1, label="Guidance Scale")
                             vc_dn = gr.Checkbox(label="Denoise", value=True)
-                            vc_pp = gr.Checkbox(label="Clean Ref Audio", value=True)
+                            vc_pp = gr.Checkbox(label="Clean Ref Audio (Silence Removal)", value=True)
                             vc_po = gr.Checkbox(label="Trim Output Silence", value=True)
-                            vc_gen_srt = gr.Checkbox(label="Generate Subtitles", value=True)
+                            vc_gen_srt = gr.Checkbox(label="Generate Subtitles (SRT)", value=True)
                             vc_punc = gr.Checkbox(label="Convert Punctuation", value=True)
                             
                         vc_btn = gr.Button("Generate Voice", variant="primary")
@@ -391,7 +587,7 @@ def build_app(model_path=None, whisper_path=None):
                     with gr.Column(scale=1):
                         vc_audio = gr.Audio(label="Result", type="filepath", elem_id="vc-audio")
                         with gr.Group(elem_classes="output-panel"):
-                            gr.HTML('<label class="custom-label">Subtitle Preview</label>')
+                            gr.HTML('<label class="custom-label">Subtitle</label>')
                             gr.HTML('<div id="vc-lyrics" class="lyrics-viewer"></div>')
                             vc_srt = gr.Textbox(show_label=False, lines=10, elem_id="vc-srt-text", interactive=False)
                         
@@ -423,7 +619,7 @@ def build_app(model_path=None, whisper_path=None):
                             vd_gs = gr.Slider(0, 5, value=2.0, step=0.1, label="Guidance Scale")
                             vd_dn = gr.Checkbox(label="Denoise", value=True)
                             vd_po = gr.Checkbox(label="Trim Output Silence", value=True)
-                            vd_gen_srt = gr.Checkbox(label="Generate Subtitles", value=True)
+                            vd_gen_srt = gr.Checkbox(label="Generate Subtitles (SRT)", value=True)
                             vd_punc = gr.Checkbox(label="Convert Punctuation", value=True)
 
                         vd_btn = gr.Button("Create Voice", variant="primary")
@@ -431,7 +627,7 @@ def build_app(model_path=None, whisper_path=None):
                     with gr.Column(scale=1):
                         vd_audio = gr.Audio(label="Result", type="filepath", elem_id="vd-audio")
                         with gr.Group(elem_classes="output-panel"):
-                            gr.HTML('<label class="custom-label">Subtitle Preview</label>')
+                            gr.HTML('<label class="custom-label">Subtitle</label>')
                             gr.HTML('<div id="vd-lyrics" class="lyrics-viewer"></div>')
                             vd_srt = gr.Textbox(show_label=False, lines=10, elem_id="vd-srt-text", interactive=False)
                         
@@ -442,12 +638,19 @@ def build_app(model_path=None, whisper_path=None):
         def transcribe_ref(audio):
             if not audio: return ""
             try:
+                print(f"🎙️ Transcribing reference audio: {audio}")
+                # Use the engine's transcribe method (loads via soundfile + uses model internal)
                 text = TTS_ENGINE.transcribe(audio)
+                print(f"📝 Result: {text}")
                 return text
             except Exception as e:
+                import traceback
+                traceback.print_exc()
+                print(f"❌ Transcription failed: {e}")
                 return f"Error during transcription: {e}"
 
         def vc_handler(*args):
+            # 0:text, 1:lang, 2:ref_audio, 3:ref_text, 4:instruct, 5:steps, 6:gs, 7:denoise, 8:punc, 9:speed, 10:dur, 11:pp, 12:po, 13:gen_srt
             for res in generate_core(
                 text=args[0], language=args[1], ref_audio=args[2], ref_text=args[3], 
                 instruct=args[4], num_step=args[5], guidance=args[6], denoise=args[7], 
@@ -459,35 +662,54 @@ def build_app(model_path=None, whisper_path=None):
         def process_ref_zip(zip_file):
             if not zip_file: return None, ""
             import zipfile, tempfile
-            audio_path, text_content = None, ""
+            audio_path = None
+            text_content = ""
             tmp = tempfile.mkdtemp()
             with zipfile.ZipFile(zip_file.name, 'r') as z:
                 z.extractall(tmp)
                 for f in z.namelist():
-                    if f.endswith(('.wav', '.mp3', '.flac')) and not f.startswith('__MACOSX'):
+                    if f.endswith(('.wav', '.mp3', '.flac')) and not f.startswith('__MACOSX') and not os.path.basename(f).startswith('.'):
                         audio_path = os.path.join(tmp, f)
-                    if f.endswith('.txt') and not f.startswith('__MACOSX'):
+                    if f.endswith('.txt') and not f.startswith('__MACOSX') and not os.path.basename(f).startswith('.'):
+                        txt_path = os.path.join(tmp, f)
                         try:
-                            with open(os.path.join(tmp, f), 'r', encoding='utf-8') as tf:
+                            with open(txt_path, 'r', encoding='utf-8') as tf:
                                 text_content = tf.read()
-                        except: pass
+                        except UnicodeDecodeError:
+                            with open(txt_path, 'r', encoding='gbk') as tf:
+                                text_content = tf.read()
             return audio_path, text_content
             
         def process_ref_txt(txt_file):
             if not txt_file: return ""
             try:
-                with open(txt_file.name, 'r', encoding='utf-8') as tf: return tf.read()
-            except: return ""
+                with open(txt_file.name, 'r', encoding='utf-8') as tf:
+                    return tf.read()
+            except UnicodeDecodeError:
+                with open(txt_file.name, 'r', encoding='gbk') as tf:
+                    return tf.read()
             
-        vc_ref_zip_btn.upload(process_ref_zip, inputs=[vc_ref_zip_btn], outputs=[vc_ref, vc_ref_text])
-        vc_ref_txt_btn.upload(process_ref_txt, inputs=[vc_ref_txt_btn], outputs=[vc_ref_text])
+        # Smart Reference Handlers
+        vc_ref_zip_btn.upload(
+            process_ref_zip,
+            inputs=[vc_ref_zip_btn],
+            outputs=[vc_ref, vc_ref_text]
+        )
+        
+        vc_ref_txt_btn.upload(
+            process_ref_txt,
+            inputs=[vc_ref_txt_btn],
+            outputs=[vc_ref_text]
+        )
+            
+        # Transcription events (Manual only)
         vc_transcribe_btn.click(transcribe_ref, inputs=[vc_ref], outputs=[vc_ref_text])
 
         vc_btn.click(
             vc_handler,
             inputs=[vc_text, vc_lang, vc_ref, vc_ref_text, vc_instruct, vc_steps, vc_gs, vc_dn, vc_punc, vc_speed, vc_dur, vc_pp, vc_po, vc_gen_srt],
             outputs=[vc_audio, vc_srt, vc_dl, vc_status]
-        )
+        ).then(lambda dl: gr.update(visible=bool(dl)), inputs=[vc_dl], outputs=[vc_dl])
 
         def vd_handler(text, lang, speed, dur, steps, gs, dn, punc, po, gen_srt, *groups):
             instruct = ", ".join([g for g in groups if g != "Auto"])
@@ -498,7 +720,7 @@ def build_app(model_path=None, whisper_path=None):
             vd_handler,
             inputs=[vd_text, vd_lang, vd_speed, vd_dur, vd_steps, vd_gs, vd_dn, vd_punc, vd_po, vd_gen_srt] + vd_groups,
             outputs=[vd_audio, vd_srt, vd_dl, vd_status]
-        )
+        ).then(lambda dl: gr.update(visible=bool(dl)), inputs=[vd_dl], outputs=[vd_dl])
 
         demo.load(None, None, None, js=_LYRICS_JS)
         
@@ -509,8 +731,27 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", type=str, default=None)
     parser.add_argument("--whisper", type=str, default=None)
-    parser.add_argument("--share", action="store_true")
+    parser.add_argument("--share", action="store_true", help="Launch with a public Gradio share link")
     args = parser.parse_args()
     
     app = build_app(args.model, args.whisper)
-    app.launch(server_name="0.0.0.0", server_port=7860, share=args.share)
+    
+    # Launch in non-blocking mode first to capture the URLs
+    app.launch(server_name="0.0.0.0", server_port=7860, share=args.share, prevent_thread_lock=True)
+    
+    # Give it a second to finalize the share URL
+    import time
+    time.sleep(2)
+    
+    local_url = getattr(app, "local_url", "http://0.0.0.0:7860")
+    share_url = getattr(app, "share_url", None)
+    
+    print("\n" + "\033[94m" + "="*60 + "\033[0m")
+    print("\033[94m🚀 OmniWhisper is ACTIVE and READY!\033[0m")
+    print(f"\033[94m🏠 Local URL:  {local_url}\033[0m")
+    if share_url:
+        print(f"\033[94m🌐 Public URL: {share_url}\033[0m")
+    print("\033[94m" + "="*60 + "\033[0m\n")
+    
+    # Now block the thread to keep the app alive
+    app.block_thread()

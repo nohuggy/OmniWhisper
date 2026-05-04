@@ -13,3 +13,13 @@ whisper-large-v3-turbo/*.bin
 whisper-large-v3-turbo/*.pt
 whisper-large-v3-turbo/*.h5
 whisper-large-v3-turbo/*.msgpack
+
+# Results & Documentation
+outputs/
+MD and LOGS/
+MD and LOGS/*.md
+MD and LOGS/*.txt
+
+# Results & Documentation
+outputs/
+MD and LOGS/

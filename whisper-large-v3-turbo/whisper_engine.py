@@ -29,61 +29,70 @@ def format_timestamp(seconds):
 
 def smart_balanced_split(text):
     if not text: return []
-    # Split into paragraphs to preserve structure
-    paragraphs = text.split('\n')
+    # Split into paragraphs first to avoid remainder accumulation
+    paragraphs = [p.strip() for p in text.split('\n') if p.strip()]
     all_segments = []
     
     for p_text in paragraphs:
-        if not p_text.strip():
-            continue
+        # Pre-process: standardize spaces but keep punctuation
+        p_text = re.sub(r'\s+', ' ', p_text).strip()
+        # Pattern captures: (leading punctuation) + (word) + (trailing punctuation) + (trailing spaces)
+        pattern = re.compile(r'([^\w\s\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]*)([\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]|[a-zA-Z0-9-]+)([^\w\s\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]*)(\s*)')
+        tokens = []
+        for match in pattern.finditer(p_text):
+            lead_punct, word, trail_punct, space = match.groups()
+            tokens.append(lead_punct + word + trail_punct + space)
+        
+        if not tokens: continue
+        
+        num_segments = max(1, round(len(tokens) / 11))
+        # If the remainder would be too big, add another segment
+        if len(tokens) / num_segments > 14:
+            num_segments += 1
             
-        # Tokenize everything: CJK characters, English words (including hyphens), and everything else (punctuation/symbols)
-        # Group 1: CJK/Japanese/Korean characters
-        # Group 2: English words/numbers
-        # Group 3: Everything else (punctuation, symbols, spaces)
-        tokens = re.findall(r'([\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af])|([a-zA-Z0-9-]+)|([^\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af\w\s]+)|(\s+)', p_text)
-        # Flatten and filter empty
-        token_list = []
-        for t in tokens:
-            combined = "".join(t)
-            if combined:
-                token_list.append(combined)
-        
-        if not token_list: continue
-        
-        # Balance segments (roughly 12-15 tokens per segment)
-        num_segments = max(1, round(len(token_list) / 12))
-        avg_len = len(token_list) / num_segments
-        
+        avg_tokens = len(tokens) / num_segments
         start_idx = 0
         for i in range(num_segments):
             if i == num_segments - 1:
-                all_segments.append("".join(token_list[start_idx:]).strip())
+                final_tokens = tokens[start_idx:]
+                if len(final_tokens) > 15:
+                    # Smart split the remainder instead of a naked mid-cut
+                    mid = len(final_tokens) // 2
+                    best_m = mid
+                    min_p_m = 1000
+                    for offset in range(-5, 6):
+                        idx_m = mid + offset
+                        if idx_m <= 0 or idx_m >= len(final_tokens): continue
+                        t_m = final_tokens[idx_m - 1]
+                        p_m = abs(offset) * 3
+                        if any(x in t_m for x in "。！？.!?;；…"): p_m -= 30
+                        elif any(x in t_m for x in "，,"): p_m -= 15
+                        else: p_m += 40
+                        if p_m < min_p_m: min_p_m = p_m; best_m = idx_m
+                    
+                    all_segments.append("".join(final_tokens[:best_m]).strip())
+                    all_segments.append("".join(final_tokens[best_m:]).strip())
+                else:
+                    all_segments.append("".join(final_tokens).strip())
                 break
-            
-            ideal_end = start_idx + int(avg_len)
-            # Find best break point (punctuation)
+                
+            ideal_end = start_idx + int(avg_tokens)
             best_break = ideal_end
             min_p = 1000
-            for offset in range(-6, 7):
+            for offset in range(-5, 6):
                 idx = ideal_end + offset
-                if idx <= start_idx or idx >= len(token_list): continue
-                
-                t = token_list[idx - 1]
-                p = abs(offset) * 2
-                # Penalties/Bonuses for breaking at punctuation
+                if idx <= start_idx or idx >= len(tokens): continue
+                t = tokens[idx - 1]
+                p = abs(offset) * 3
                 if any(x in t for x in "。！？.!?;；…"): p -= 30
                 elif any(x in t for x in "，,"): p -= 15
-                elif any(x in t for x in "”'\"】〉」"): p -= 5 # Break after closing marks
-                
-                if p < min_p:
-                    min_p = p
-                    best_break = idx
+                else: p += 40
+                if p < min_p: min_p = p; best_break = idx
             
-            all_segments.append("".join(token_list[start_idx:best_break]).strip())
+            all_segments.append("".join(tokens[start_idx:best_break]).strip())
             start_idx = best_break
             
-    return [s for s in all_segments if s]
+    return all_segments
 
 def align_robust(user_segments, whisper_chunks):
     """
@@ -158,21 +167,14 @@ def align_robust(user_segments, whisper_chunks):
     # Extract segment boundaries
     results = []
     curr = 0
-    last_e = 0.0
     for s_clean in user_clean:
         if not s_clean:
-            # For empty segments (just punctuation), provide a small duration based on previous or 0
-            start_t = last_e
-            end_t = last_e + 0.5
-            results.append((start_t, end_t))
-            last_e = end_t
+            results.append((last_e, last_e + 1.0))
             continue
-            
         start_t = mapping[curr][0]
         end_t = mapping[curr + len(s_clean) - 1][1]
         results.append((start_t, end_t))
         curr += len(s_clean)
-        last_e = end_t
         
     return results
 
