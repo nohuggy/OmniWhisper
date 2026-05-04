@@ -83,11 +83,18 @@ def load_engines(model_path=None, whisper_path=None):
         pass
 
     if not has_weights:
-        print(f"📥 Downloading OmniVoice Weights to {model_path}...")
+        print(f"📥 Downloading OmniVoice Weights (~1.5GB) to {model_path}...")
+        print("💡 This may take a few minutes depending on your internet speed.")
         from huggingface_hub import snapshot_download
         try:
-            snapshot_download(repo_id="k2-fsa/OmniVoice", local_dir=model_path, local_dir_use_symlinks=False, local_files_only=False)
-            print("✅ OmniVoice Weights: Ready")
+            snapshot_download(
+                repo_id="k2-fsa/OmniVoice", 
+                local_dir=model_path, 
+                local_dir_use_symlinks=False, 
+                local_files_only=False,
+                resume_download=True
+            )
+            print("✅ OmniVoice Weights: Download Complete")
         except Exception as e:
             print(f"⚠️ Snapshot download failed: {e}. Trying Git fallback...")
             os.system(f"git clone https://huggingface.co/k2-fsa/OmniVoice {model_path}_tmp && mv {model_path}_tmp/* {model_path}/ && rm -rf {model_path}_tmp")
@@ -103,16 +110,20 @@ def load_engines(model_path=None, whisper_path=None):
     if WHISPER_PIPE is None:
         has_whisper = os.path.exists(whisper_path) and any(f.endswith(('.bin', '.safetensors', '.pt')) for f in os.listdir(whisper_path) if os.path.isfile(os.path.join(whisper_path, f)))
         if not has_whisper:
-            disable_offline()
-            
-        if not os.path.exists(whisper_path) or not any(f.endswith(('.bin', '.safetensors', '.pt')) for f in os.listdir(whisper_path) if os.path.isfile(os.path.join(whisper_path, f))):
-            print(f"📥 Downloading Whisper Turbo to {whisper_path}...")
+            print(f"📥 Downloading Whisper Turbo (~1.6GB) to {whisper_path}...")
+            print("💡 This may take a few minutes...")
             from huggingface_hub import snapshot_download
             try:
-                snapshot_download(repo_id="openai/whisper-large-v3-turbo", local_dir=whisper_path, local_dir_use_symlinks=False, local_files_only=False)
-                print("✅ Whisper Turbo: Ready")
-            except Exception:
-                print("⚠️ Switching to Git fallback for Whisper...")
+                snapshot_download(
+                    repo_id='openai/whisper-large-v3-turbo', 
+                    local_dir=whisper_path, 
+                    local_dir_use_symlinks=False, 
+                    local_files_only=False,
+                    resume_download=True
+                )
+                print("✅ Whisper Model: Download Complete")
+            except Exception as e:
+                print(f"⚠️ Whisper download failed: {e}. Trying secondary loader...")
                 os.system(f"git clone https://huggingface.co/openai/whisper-large-v3-turbo {whisper_path}_tmp && mv {whisper_path}_tmp/* {whisper_path}/ && rm -rf {whisper_path}_tmp")
                 print("✅ Whisper Turbo: Ready (Fallback)")
             
