@@ -559,10 +559,11 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
     lang_code = language if language != "Auto" else None
     
     try:
-        # 2. TTS Generation (Streaming Progress)
-        full_waveform = []
-        sr = 16000
+        # 0. Immediate yield to remove "Loader GIF" and show activity
+        if progress: progress(0.01, desc="🚀 Initializing Engines...")
+        yield gr.update(), gr.update(), gr.update(), "🚀 Initializing synthesis..."
         
+        # 2. TTS Generation (Streaming Progress)
         gen_iter = TTS_ENGINE.generate(
             text=text.strip(),
             ref_audio=ref_audio,
@@ -589,9 +590,10 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
                 if progress:
                     progress(curr/total * 0.8, desc=f"⏳ TTS ({curr}/{total})")
                 
-                # 🚀 HEARTBEAT: Yield every 2s to keep connection alive
-                if time.time() - last_yield_time > 2.0:
-                    yield gr.update(), gr.update(), gr.update(), f"⏳ TTS Generating: {curr}/{total}"
+                # 🚀 HEARTBEAT: Constant yield to keep connection alive
+                # Yield every 1.5s to ensure Gradio/Colab proxy never times out
+                if time.time() - last_yield_time > 1.5:
+                    yield gr.update(), gr.update(), gr.update(), f"⏳ TTS Generating: Chunk {curr}/{total}"
                     last_yield_time = time.time()
             else:
                 full_waveform = chunk_wave
@@ -777,20 +779,32 @@ def build_app(model_path=None, whisper_path=None):
 
         # Event Handlers
         def transcribe_ref(audio, progress=gr.Progress()):
-            if not audio: return ""
+            if not audio: 
+                yield ""
+                return
             try:
-                if progress: progress(0.5, desc="🎙️ Transcribing reference audio...")
-                print(f"🎙️ Transcribing reference audio: {audio}")
-                # Use the engine's transcribe method (loads via soundfile + uses model internal)
-                text = TTS_ENGINE.transcribe(audio)
-                print(f"📝 Result: {text}")
-                if progress: progress(1.0, desc="✅ Transcription complete")
-                return text
+                import threading
+                res = {"text": None, "error": None}
+                def run():
+                    try: res["text"] = TTS_ENGINE.transcribe(audio)
+                    except Exception as e: res["error"] = str(e)
+                
+                thread = threading.Thread(target=run)
+                thread.start()
+                
+                dot_count = 0
+                while thread.is_alive():
+                    dot_count = (dot_count + 1) % 4
+                    dots = "." * dot_count
+                    if progress: progress(0.5, desc=f"🎙️ Transcribing{dots}")
+                    yield f"🎙️ Transcribing{dots}"
+                    time.sleep(1.0)
+                
+                thread.join()
+                if res["error"]: yield f"Error: {res['error']}"
+                else: yield res["text"]
             except Exception as e:
-                import traceback
-                traceback.print_exc()
-                print(f"❌ Transcription failed: {e}")
-                return f"Error during transcription: {e}"
+                yield f"Error: {e}"
 
         def vc_handler(
             text, lang, ref, ref_text, instruct, steps, gs, dn, punc, speed, dur, pp, po, gen_srt,
