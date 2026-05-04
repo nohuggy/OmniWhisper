@@ -24,19 +24,29 @@ for var in ["HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE"]:
         del os.environ[var]
 
 # ---------------------------------------------------------------------------
-# 🚀 COLAB STABILITY ANNOTATION (CRITICAL)
+# 🚀 COLAB STABILITY & DEBUG ANNOTATION (IMMUTABLE GUARDRAILS)
 # ---------------------------------------------------------------------------
-# This edition of OmniWhisper is specially optimized for Google Colab T4.
-# It solves the "Broken Connection" and "CUDA OOM" issues using:
-# 1. RADICAL UNLOADING: To fit two massive models (OmniVoice + Whisper) 
-#    on a single 16GB T4, models are COMPLETELY deleted and re-loaded 
-#    on-demand. This provides each model with a 15GB "Clean Slate".
-# 2. ACTIVE HEARTBEAT: Uses a live elapsed timer in the status message 
-#    to force browser re-renders every 0.8s, keeping the WebSocket alive.
-# 3. BALANCED PRECISION: Uses return_timestamps="word" for perfect SRT 
-#    alignment, but FORCES batch_size=1 and chunk_length_s=30 to prevent 
-#    VRAM spikes. This matches the stable production setup from Lightning AI.
-# ⚠️ DO NOT REVERT these patterns, as they are required for Colab stability.
+# This edition solves the "Broken Connection" issue specific to Google Colab.
+# 
+# ## 1. THE DEBUG JOURNEY (KEY MOMENTS)
+# - SYMPTOM A: "Broken Connection" error after 10-20s of ASR.
+# - INITIAL ASSUMPTION: WebUI Timeout. Fixed with "Active Heartbeat" (Live Timer).
+# - SYMPTOM B: Disconnection continued despite the timer. 
+# - KEY DISCOVERY: Applied real-time VRAM tracking which revealed the TRUE cause:
+#   "SRT Error: CUDA out of memory. Tried to allocate 602.00 MiB. GPU 0 has a 
+#   total capacity of 14.56 GiB of which 357.81 MiB is free."
+# 
+# ## 2. WHY LIGHTNING.AI WORKS BUT COLAB FAILED
+# - SYSTEM OVERHEAD: Colab runs a Jupyter backend that reserves ~800MB of VRAM 
+#   for the UI/Bridge. Lightning.ai "headless" apps have 0MB overhead.
+# - MARGIN OF ERROR: That 800MB is the exact margin that causes Whisper Large V3 
+#   to OOM on Colab when OmniVoice is also in memory.
+# 
+# ## 3. THE BALANCED SOLUTION (DO NOT ALTER)
+# - RADICAL UNLOADING: Deletes TTS from GPU before ASR starts (Exclusive 15GB).
+# - VRAM GUARDRAILS: batch_size=1 and chunk_length_s=30 are REQUIRED.
+# - PRECISION GUARDRAIL: return_timestamps="word" is REQUIRED for accurate 
+#   alignment. It only stays within VRAM because batch_size is 1.
 # ---------------------------------------------------------------------------
 
 # Add project root to path
