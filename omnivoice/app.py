@@ -567,6 +567,10 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
                 z.write(wav_path, arcname=f"{slug}.wav")
                 z.write(srt_path, arcname=f"{slug}.srt")
         
+        elapsed = time.time() - start_time
+        tokens = len(text.strip())
+        status_msg = f"✅ Done in {elapsed:.1f}s | {duration_s:.1f}s Audio | {tokens} Chars"
+
         # FINAL YIELD: Ensure audio_path is still the MP3 to avoid the 3rd reload
         yield audio_path, srt_content, zip_path, status_msg
         
