@@ -389,6 +389,39 @@ _LYRICS_JS = r"""
                     }
                 }
 
+                // 3. Consistency Filter (Anti-Jump)
+                // Prevents the "1-minute jump" glitch by ignoring sudden large jumps 
+                // unless they persist, indicating a real user seek.
+                var now = Date.now();
+                var dt = (now - (viewer._lastTick || now)) / 1000;
+                viewer._lastTick = now;
+
+                if (currentTime >= 0 && viewer._lastSafeTime >= 0) {
+                    var delta = Math.abs(currentTime - (viewer._lastSafeTime + dt));
+                    // If jump is > 2s and we haven't confirmed it yet
+                    if (delta > 2.0) {
+                        if (viewer._jumpTime !== currentTime) {
+                            viewer._jumpTime = currentTime;
+                            viewer._jumpCount = 1;
+                            // Temporarily ignore the jump and use projected time
+                            currentTime = viewer._lastSafeTime + dt;
+                        } else {
+                            viewer._jumpCount++;
+                            if (viewer._jumpCount < 4) { // Wait ~800ms to confirm seek
+                                currentTime = viewer._lastSafeTime + dt;
+                            } else {
+                                // Confirmed seek
+                                viewer._lastSafeTime = currentTime;
+                            }
+                        }
+                    } else {
+                        viewer._lastSafeTime = currentTime;
+                        viewer._jumpCount = 0;
+                    }
+                } else if (currentTime >= 0) {
+                    viewer._lastSafeTime = currentTime;
+                }
+
                 if (currentTime >= 0) {
                     var srtVal = getSRT(srtBoxId);
                     if (viewer.style.display === 'none' || viewer._lastSRT !== srtVal) {
@@ -405,6 +438,7 @@ _LYRICS_JS = r"""
                     }
                     renderLyrics(viewer, cues, activeIdx);
                 } else {
+                    viewer._lastSafeTime = -1;
                     if (viewer.style.display !== 'none') {
                         viewer.style.display = 'none';
                         rawBox.style.display = 'block';
