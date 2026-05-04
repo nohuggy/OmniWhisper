@@ -185,7 +185,7 @@ button.primary, button.secondary {
 
 _LYRICS_JS = """
 () => {
-    console.log('[Lyrics] Script starting (Enhanced Polling Mode)...');
+    console.log('[Lyrics] Initializing Robust Polling Engine...');
     
     function parseSRT(raw) {
         if (!raw) return [];
@@ -208,11 +208,9 @@ _LYRICS_JS = """
 
     function renderLyrics(viewer, cues, activeIdx) {
         if (!cues.length) {
-            viewer.innerHTML = '<div style="text-align:center;color:#aaa;padding:40px;">No subtitles</div>';
+            viewer.innerHTML = '<div style="text-align:center;color:#aaa;padding:40px;">No subtitles loaded</div>';
             return;
         }
-        
-        // Initial render if empty or cue count changed
         if (!viewer.children.length || viewer._cueCount !== cues.length) {
             var html = '';
             for (var i = 0; i < cues.length; i++) {
@@ -221,11 +219,8 @@ _LYRICS_JS = """
             viewer.innerHTML = html;
             viewer._cueCount = cues.length;
         }
-
         if (viewer._lastActive === activeIdx) return;
         viewer._lastActive = activeIdx;
-
-        // Update classes incrementally
         var lines = viewer.children;
         for (var i = 0; i < lines.length; i++) {
             var el = lines[i];
@@ -233,8 +228,6 @@ _LYRICS_JS = """
             if (idx === activeIdx) {
                 el.classList.add('active');
                 el.classList.remove('past');
-                
-                // TARGETED SCROLL: Only scroll the viewer, NOT the whole page
                 var targetTop = el.offsetTop - (viewer.offsetHeight / 2) + (el.offsetHeight / 2);
                 viewer.scrollTo({ top: targetTop, behavior: 'smooth' });
             } else if (idx < activeIdx) {
@@ -251,32 +244,23 @@ _LYRICS_JS = """
         ['vd-audio', 'vd-lyrics', 'vd-srt-text']
     ];
 
-    function getSRT(srtBoxId) {
-        var box = document.getElementById(srtBoxId);
-        if (!box) return '';
-        var ta = box.querySelector('textarea');
-        if (ta) return ta.value;
-        var elements = box.querySelectorAll('div, span, pre, p');
-        for (var i = 0; i < elements.length; i++) {
-            var txt = (elements[i].innerText || "").trim();
-            if (txt && /^\s*1\s*\n\s*00:/.test(txt)) return txt;
-        }
-        var label = box.querySelector('label');
-        var text = box.innerText || '';
-        if (label && text.startsWith(label.innerText)) {
-            text = text.substring(label.innerText.length).trim();
-        }
-        return text;
-    }
-
     function parseTimeStr(s) {
-        if (!s || s.trim() === "") return -1;
-        var p = s.split(':');
+        if (!s) return -1;
+        var p = s.trim().split(':');
+        if (p.length < 2) return -1;
         try {
             if (p.length === 2) return parseInt(p[0])*60 + parseFloat(p[1]);
             if (p.length === 3) return parseInt(p[0])*3600 + parseInt(p[1])*60 + parseFloat(p[2]);
         } catch(e) {}
         return -1;
+    }
+
+    function getSRT(srtBoxId) {
+        var box = document.getElementById(srtBoxId);
+        if (!box) return '';
+        var ta = box.querySelector('textarea');
+        if (ta) return ta.value;
+        return box.innerText || '';
     }
 
     function updateLyrics() {
@@ -288,63 +272,62 @@ _LYRICS_JS = """
             if (!audioContainer || !viewer || !rawBox) return;
 
             var currentTime = -1;
-            
-            // Method 1: Target internal audio elements (Standard + Shadow Root)
-            var audioEls = audioContainer.querySelectorAll('audio');
-            if (audioEls.length === 0 && audioContainer.shadowRoot) {
-                audioEls = audioContainer.shadowRoot.querySelectorAll('audio');
+
+            // 1. Check for audio element in container (including shadow DOM)
+            var internalAudios = audioContainer.querySelectorAll('audio');
+            if (internalAudios.length === 0 && audioContainer.shadowRoot) {
+                internalAudios = audioContainer.shadowRoot.querySelectorAll('audio');
             }
-            for (var i = 0; i < audioEls.length; i++) {
-                if (!audioEls[i].paused) {
-                    currentTime = audioEls[i].currentTime;
+            for (var i = 0; i < internalAudios.length; i++) {
+                if (!internalAudios[i].paused && internalAudios[i].currentTime > 0) {
+                    currentTime = internalAudios[i].currentTime;
                     break;
                 }
             }
-            
-            // Method 2: UI Scraper (For Gradio 5 Waveform / WebAudio)
+
+            // 2. Global fallback (Any playing audio on page)
             if (currentTime < 0) {
-                // Search ALL nodes for time-like strings (e.g., "0:05")
-                var allNodes = audioContainer.getElementsByTagName('*');
-                var foundTime = -1;
-                for (var i = 0; i < allNodes.length; i++) {
-                    var txt = (allNodes[i].innerText || "").trim();
-                    if (/^\d+(:\d+)+$/.test(txt)) {
-                        var p = parseTimeStr(txt);
-                        if (p > 0) { foundTime = p; break; }
-                        if (p === 0) foundTime = 0;
+                var allAudios = document.querySelectorAll('audio');
+                for (var j = 0; j < allAudios.length; j++) {
+                    if (!allAudios[j].paused && allAudios[j].currentTime > 0) {
+                        currentTime = allAudios[j].currentTime;
+                        break;
                     }
                 }
-                
-                if (foundTime >= 0) {
-                    if (foundTime !== viewer._lastMotionTime) {
-                        viewer._lastMotionTime = foundTime;
-                        viewer._lastMotionUpdate = Date.now();
-                    }
-                    // Motion check: assume playing if time has changed recently OR is non-zero
-                    if (Date.now() - viewer._lastMotionUpdate < 2500 || (foundTime > 0 && foundTime < 99999)) {
-                        currentTime = foundTime;
+            }
+
+            // 3. UI Scraper (Gradio 5 Waveform)
+            if (currentTime < 0) {
+                var txt = audioContainer.innerText || "";
+                var matches = txt.match(/(\\d+:\\d+)/g);
+                if (matches) {
+                    for (var m = 0; m < matches.length; m++) {
+                        var p = parseTimeStr(matches[m]);
+                        if (p >= 0) {
+                            if (p !== viewer._lastP) { viewer._lastP = p; viewer._lastT = Date.now(); }
+                            if (Date.now() - (viewer._lastT || 0) < 1500) { currentTime = p; break; }
+                        }
                     }
                 }
             }
 
             if (currentTime >= 0) {
                 var srtVal = getSRT(srtBoxId);
-                if (rawBox.style.display !== 'none' || viewer._lastSRT !== srtVal) {
+                if (viewer.style.display === 'none' || viewer._lastSRT !== srtVal) {
                     rawBox.style.display = 'none';
                     viewer.style.display = 'block';
                     viewer._cues = parseSRT(srtVal);
                     viewer._lastSRT = srtVal;
                     viewer._cueCount = -1;
                 }
-                
                 var cues = viewer._cues || [];
                 var activeIdx = -1;
-                for (var i = 0; i < cues.length; i++) {
-                    if (currentTime >= cues[i].start && currentTime < cues[i].end) { activeIdx = i; break; }
+                for (var k = 0; k < cues.length; k++) {
+                    if (currentTime >= cues[k].start && currentTime < cues[k].end) { activeIdx = k; break; }
                 }
                 renderLyrics(viewer, cues, activeIdx);
             } else {
-                if (rawBox.style.display === 'none') {
+                if (viewer.style.display !== 'none') {
                     viewer.style.display = 'none';
                     rawBox.style.display = 'block';
                 }
@@ -352,7 +335,7 @@ _LYRICS_JS = """
         });
     }
 
-    setInterval(updateLyrics, 100);
+    setInterval(updateLyrics, 200);
 }
 """
 
