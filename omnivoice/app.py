@@ -553,6 +553,9 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
         # 4. SRT Generation
         srt_content = ""
         if gen_srt:
+            # CRITICAL FIX: To prevent the "Triple Reload" bug (where the audio player resets 3 times),
+            # we MUST yield the optimized MP3 path (audio_path) immediately after TTS.
+            # This allows the player to load ONCE and stay loaded during the ASR phase.
             yield audio_path, "", None, f"⏳ TTS Done ({duration_s:.1f}s). Running ASR for alignment..."
             srt_content = text_to_srt_whisper(text, audio_tuple, WHISPER_PIPE)
         
@@ -574,7 +577,9 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
         tokens = len(text.strip())
         status_msg = f"✅ Done in {elapsed:.1f}s | {duration_s:.1f}s Audio | {tokens} Chars"
 
-        # FINAL YIELD: Ensure audio_path is still the MP3 to avoid the 3rd reload
+        # FINAL YIELD: Maintain the SAME audio_path (MP3) to avoid the final UI reload glitch.
+        # Gradio 5 reloads the component if the source path changes. 
+        # By keeping it as the MP3, the user's preview remains uninterrupted.
         yield audio_path, srt_content, zip_path, status_msg
         
     except Exception as e:
