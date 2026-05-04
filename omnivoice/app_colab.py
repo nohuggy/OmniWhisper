@@ -433,7 +433,9 @@ def text_to_srt_whisper(text, audio_tuple, pipe, language="zh", progress=None):
             
         result = pipe(
             {"sampling_rate": sr, "raw": waveform_f32}, 
-            return_timestamps="word"
+            chunk_length_s=30, 
+            batch_size=1, 
+            return_timestamps=True
         )
         
         chunks = result.get("chunks", [])
