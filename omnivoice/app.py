@@ -289,39 +289,40 @@ _LYRICS_JS = """
 
             var currentTime = -1;
             
-            // Method 1: Hidden Audio Element (Standard)
-            var audioEl = audioContainer.querySelector('audio');
-            if (audioEl && !audioEl.paused) {
-                currentTime = audioEl.currentTime;
+            // Method 1: Target internal audio elements (Standard + Shadow Root)
+            var audioEls = audioContainer.querySelectorAll('audio');
+            if (audioEls.length === 0 && audioContainer.shadowRoot) {
+                audioEls = audioContainer.shadowRoot.querySelectorAll('audio');
+            }
+            for (var i = 0; i < audioEls.length; i++) {
+                if (!audioEls[i].paused) {
+                    currentTime = audioEls[i].currentTime;
+                    break;
+                }
             }
             
             // Method 2: UI Scraper (For Gradio 5 Waveform / WebAudio)
             if (currentTime < 0) {
-                // Broad search for time strings in all sub-elements (spans, divs)
-                var timeEls = audioContainer.querySelectorAll('span, div, p');
-                var parsed = -1;
-                for (var i = 0; i < timeEls.length; i++) {
-                    var txt = (timeEls[i].innerText || "").trim();
-                    if (/^\d+:\d+$/.test(txt)) {
-                        parsed = parseTimeStr(txt);
-                        if (parsed >= 0) break;
+                // Search ALL nodes for time-like strings (e.g., "0:05")
+                var allNodes = audioContainer.getElementsByTagName('*');
+                var foundTime = -1;
+                for (var i = 0; i < allNodes.length; i++) {
+                    var txt = (allNodes[i].innerText || "").trim();
+                    if (/^\d+(:\d+)+$/.test(txt)) {
+                        var p = parseTimeStr(txt);
+                        if (p > 0) { foundTime = p; break; }
+                        if (p === 0) foundTime = 0;
                     }
                 }
                 
-                // Fallback to innerText regex if targeted search fails
-                if (parsed < 0) {
-                    var matches = audioContainer.innerText.match(/(\d+:\d+)/g);
-                    if (matches && matches.length > 0) parsed = parseTimeStr(matches[0]);
-                }
-
-                if (parsed >= 0) {
-                    if (parsed !== viewer._lastMotionTime) {
-                        viewer._lastMotionTime = parsed;
+                if (foundTime >= 0) {
+                    if (foundTime !== viewer._lastMotionTime) {
+                        viewer._lastMotionTime = foundTime;
                         viewer._lastMotionUpdate = Date.now();
                     }
-                    // Assume playing if motion was detected in last 2.5s
-                    if (Date.now() - viewer._lastMotionUpdate < 2500) {
-                        currentTime = parsed;
+                    // Motion check: assume playing if time has changed recently OR is non-zero
+                    if (Date.now() - viewer._lastMotionUpdate < 2500 || (foundTime > 0 && foundTime < 99999)) {
+                        currentTime = foundTime;
                     }
                 }
             }
