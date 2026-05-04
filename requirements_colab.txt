@@ -7,7 +7,7 @@ pydub
 gradio<6
 tensorboardX
 webdataset
-numpy<2
+numpy
 soundfile
 librosa
 pypinyin
