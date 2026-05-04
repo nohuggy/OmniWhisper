@@ -586,6 +586,7 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
                 TTS_ENGINE.model.to("cuda")
                 torch.cuda.empty_cache()
 
+        start_time = time.time()
         # 0. Immediate yield to remove "Loader GIF" and show activity
         if progress: progress(0.01, desc="🚀 Initializing Engines...")
         yield gr.update(), gr.update(), gr.update(), "🚀 Initializing synthesis..."
@@ -676,9 +677,10 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
                     # Slow crawl from 0.8 to 0.95 during ASR
                     progress(0.8 + (dot_count * 0.03), desc=f"🔍 Aligning{dots}")
                 
+                elapsed = int(time.time() - start_time)
                 # HEARTBEAT: Constant yield to keep Colab/Gradio connection active
                 # Faster heartbeat (0.8s) for long-form stability
-                yield gr.update(), gr.update(), gr.update(), f"⏳ ASR Alignment in progress{dots}"
+                yield gr.update(), gr.update(), gr.update(), f"⏳ ASR Alignment in progress ({elapsed}s)... {dots}"
                 time.sleep(0.8)
             
             thread.join()
@@ -691,7 +693,8 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
         
         zip_path = None
         if gen_srt and srt_content and not srt_content.startswith("SRT Error"):
-            yield gr.update(), gr.update(), gr.update(), "📦 Packaging project files..."
+            elapsed = int(time.time() - start_time)
+            yield gr.update(), gr.update(), gr.update(), f"📦 Packaging results ({elapsed}s)..."
             
             srt_path = f"outputs/{unique_slug}.srt"
             with open(srt_path, "w", encoding="utf-8") as f:
