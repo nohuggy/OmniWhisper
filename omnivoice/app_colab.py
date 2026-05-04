@@ -56,6 +56,10 @@ for var in ["HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE"]:
 # - DOM IDs: The lyric viewer relies on IDs: 'vc-audio', 'vd-audio', etc.
 # - LYRIC SCRAPER: JS uses a "Motion-Aware" scraper that only trusts timestamps 
 #   if they are changing and checks primaryAudio.paused to prevent hanging.
+# - MINUTE JUMP FIX: A Hysteresis filter is applied to ignore sudden 60s jumps 
+#   caused by UI text flickers at minute boundaries (e.g. 3:59 -> 4:00).
+# - MODE FLICKER FIX: A persistence filter ensures the UI doesn't switch back 
+#   to raw text mode unless the time-scraper fails for >600ms.
 # ---------------------------------------------------------------------------
 
 # Add project root to path
@@ -423,6 +427,7 @@ _LYRICS_JS = r"""
                 }
 
                 if (currentTime >= 0) {
+                    viewer._modeFailCount = 0;
                     var srtVal = getSRT(srtBoxId);
                     if (viewer.style.display === 'none' || viewer._lastSRT !== srtVal) {
                         rawBox.style.display = 'none';
@@ -439,7 +444,8 @@ _LYRICS_JS = r"""
                     renderLyrics(viewer, cues, activeIdx);
                 } else {
                     viewer._lastSafeTime = -1;
-                    if (viewer.style.display !== 'none') {
+                    viewer._modeFailCount = (viewer._modeFailCount || 0) + 1;
+                    if (viewer._modeFailCount >= 3 && viewer.style.display !== 'none') {
                         viewer.style.display = 'none';
                         rawBox.style.display = 'block';
                     }
@@ -887,7 +893,6 @@ def build_app(model_path=None, whisper_path=None):
                 if res["error"]: yield f"Error: {res['error']}"
                 else: yield res["text"]
             except Exception as e:
-                yield f"Error: {e}"
                 yield f"Error: {e}"
 
         def vc_handler(
