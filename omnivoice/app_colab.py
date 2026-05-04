@@ -781,9 +781,10 @@ def build_app(model_path=None, whisper_path=None):
                 return f"Error during transcription: {e}"
 
         def vc_handler(
-            progress, text, lang, ref, ref_text, instruct, steps, gs, dn, punc, speed, dur, pp, po, gen_srt
+            text, lang, ref, ref_text, instruct, steps, gs, dn, punc, speed, dur, pp, po, gen_srt,
+            progress=gr.Progress()
         ):
-            # Move progress to the first argument as Gradio often prefers this for visibility
+            # Gradio automatically injects the progress object if it's a parameter
             for res in generate_core(
                 text=text, language=lang, ref_audio=ref, ref_text=ref_text, 
                 instruct=instruct, num_step=steps, guidance=gs, denoise=dn, 
@@ -841,19 +842,19 @@ def build_app(model_path=None, whisper_path=None):
 
         vc_btn.click(
             vc_handler,
-            inputs=[gr.Progress(), vc_text, vc_lang, vc_ref, vc_ref_text, vc_instruct, vc_steps, vc_gs, vc_dn, vc_punc, vc_speed, vc_dur, vc_pp, vc_po, vc_gen_srt],
+            inputs=[vc_text, vc_lang, vc_ref, vc_ref_text, vc_instruct, vc_steps, vc_gs, vc_dn, vc_punc, vc_speed, vc_dur, vc_pp, vc_po, vc_gen_srt],
             outputs=[vc_audio, vc_srt, vc_dl, vc_status]
         ).then(lambda dl: gr.update(visible=bool(dl)), inputs=[vc_dl], outputs=[vc_dl])
 
 
-        def vd_handler(progress, text, lang, speed, dur, steps, gs, dn, punc, po, gen_srt, *groups):
+        def vd_handler(text, lang, speed, dur, steps, gs, dn, punc, po, gen_srt, *groups, progress=gr.Progress()):
             instruct = ", ".join([g for g in groups if g != "Auto"])
             for res in generate_core(text, lang, None, None, instruct, steps, gs, dn, speed, dur, False, po, "design", gen_srt, punc, progress=progress):
                 yield res
 
         vd_btn.click(
             vd_handler,
-            inputs=[gr.Progress(), vd_text, vd_lang, vd_speed, vd_dur, vd_steps, vd_gs, vd_dn, vd_punc, vd_po, vd_gen_srt] + vd_groups,
+            inputs=[vd_text, vd_lang, vd_speed, vd_dur, vd_steps, vd_gs, vd_dn, vd_punc, vd_po, vd_gen_srt] + vd_groups,
             outputs=[vd_audio, vd_srt, vd_dl, vd_status]
         ).then(lambda dl: gr.update(visible=bool(dl)), inputs=[vd_dl], outputs=[vd_dl])
 
