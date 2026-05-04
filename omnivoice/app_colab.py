@@ -213,6 +213,47 @@ CSS = """
 .lyric-line.active { color: #fff; font-weight: bold; background: rgba(79, 70, 229, 0.3); border-radius: 6px; }
 """
 
+_LYRICS_JS = r"""
+() => {
+    function parseTimestamp(s) {
+        if (!s) return 0;
+        var p = s.replace(',','.').split(':');
+        if (p.length === 3) return parseInt(p[0])*3600 + parseInt(p[1])*60 + parseFloat(p[2]);
+        return parseFloat(p[p.length-1]);
+    }
+    function parseSRT(data) {
+        if (!data) return [];
+        var res = [], blocks = data.trim().split(/\n\s*\n/);
+        blocks.forEach(block => {
+            var lines = block.split('\n');
+            if (lines.length >= 3) {
+                var tm = lines[1].match(/(\d+:\d+:\d+,\d+)\s*-->\s*(\d+:\d+:\d+,\d+)/);
+                if (tm) res.push({start: parseTimestamp(tm[1]), end: parseTimestamp(tm[2]), text: lines.slice(2).join(' ')});
+            }
+        });
+        return res;
+    }
+    function update() {
+        ['vc', 'vd'].forEach(prefix => {
+            var aud = document.getElementById(prefix+'-audio')?.querySelector('audio');
+            var lyr = document.getElementById(prefix+'-lyrics');
+            var srt = document.getElementById(prefix+'-srt-text')?.querySelector('textarea')?.value;
+            if (!aud || !lyr || !srt || aud.paused) { if(lyr) lyr.style.display='none'; return; }
+            lyr.style.display='block';
+            if (lyr._last !== srt) { lyr._cues = parseSRT(srt); lyr._last = srt; lyr.innerHTML = lyr._cues.map((c,i) => `<div class="lyric-line" id="${prefix}-l-${i}">${c.text}</div>`).join(''); }
+            var cur = aud.currentTime, active = -1;
+            lyr._cues.forEach((c,i) => {
+                var el = document.getElementById(`${prefix}-l-${i}`);
+                if (cur >= c.start && cur < c.end) { el.className='lyric-line active'; active=i; }
+                else el.className='lyric-line';
+            });
+            if (active >= 0) { var el = document.getElementById(`${prefix}-l-${active}`); lyr.scrollTo({top: el.offsetTop - 100, behavior: 'smooth'}); }
+        });
+    }
+    setInterval(update, 200);
+}
+"""
+
 def build_app(model_path=None, whisper_path=None):
     load_engines(model_path, whisper_path)
     
