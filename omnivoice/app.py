@@ -291,11 +291,8 @@ _LYRICS_JS = """
             
             // Method 1: Hidden Audio Element (Standard)
             var audioEl = audioContainer.querySelector('audio');
-            var isActuallyPlaying = false;
-            
             if (audioEl && !audioEl.paused) {
                 currentTime = audioEl.currentTime;
-                isActuallyPlaying = true;
             }
             
             // Method 2: UI Scraper (For Gradio 5 Waveform / WebAudio)
@@ -303,33 +300,35 @@ _LYRICS_JS = """
                 var allText = audioContainer.innerText;
                 var matches = allText.match(/(\d+:\d+)/g);
                 if (matches && matches.length > 0) {
-                    var parsed = parseTimeStr(matches[0]);
+                    // Find the first non-zero time if possible, otherwise first match
+                    var parsed = -1;
+                    for (var m=0; m<matches.length; m++) {
+                        var p = parseTimeStr(matches[m]);
+                        if (p > 0) { parsed = p; break; }
+                    }
+                    if (parsed < 0) parsed = parseTimeStr(matches[0]);
                     
                     if (parsed >= 0) {
-                        isActuallyPlaying = true;
-                        // Check for motion if we're only using the scraper
-                        if (parsed === viewer._lastMotionTime) {
-                            if (Date.now() - (viewer._lastMotionUpdate || 0) > 1500) {
-                                isActuallyPlaying = false; // Long timeout for scraper
-                            }
-                        } else {
+                        if (parsed !== viewer._lastMotionTime) {
                             viewer._lastMotionTime = parsed;
                             viewer._lastMotionUpdate = Date.now();
                         }
-                        currentTime = parsed;
+                        // Assume playing if motion was seen in the last 2.5 seconds
+                        if (Date.now() - viewer._lastMotionUpdate < 2500) {
+                            currentTime = parsed;
+                        }
                     }
                 }
             }
 
-            if (isActuallyPlaying || currentTime > 0) {
+            if (currentTime >= 0) {
                 var srtVal = getSRT(srtBoxId);
-                // Switch to viewer if not already or if SRT content changed
-                if (viewer.style.display === 'none' || viewer._lastSRT !== srtVal) {
+                if (rawBox.style.display !== 'none' || viewer._lastSRT !== srtVal) {
                     rawBox.style.display = 'none';
                     viewer.style.display = 'block';
                     viewer._cues = parseSRT(srtVal);
                     viewer._lastSRT = srtVal;
-                    viewer._cueCount = -1; 
+                    viewer._cueCount = -1;
                 }
                 
                 var cues = viewer._cues || [];
@@ -339,8 +338,7 @@ _LYRICS_JS = """
                 }
                 renderLyrics(viewer, cues, activeIdx);
             } else {
-                // Return to raw box only if definitely stopped/paused
-                if (viewer.style.display !== 'none') {
+                if (rawBox.style.display === 'none') {
                     viewer.style.display = 'none';
                     rawBox.style.display = 'block';
                 }
