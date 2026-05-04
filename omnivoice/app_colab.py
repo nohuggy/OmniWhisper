@@ -582,6 +582,9 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
                 # Heartbeat via Progress bar to prevent Colab disconnection
                 if progress:
                     progress((curr/total)*0.8, desc=f"⏳ Synthesizing TTS (Chunk {curr}/{total})")
+                # Restore status message for the user, but only every 10% to reduce flicker
+                if curr % max(1, total // 10) == 0 or curr == total:
+                    yield None, "", None, f"⏳ TTS Generation: Chunk {curr}/{total}"
             else:
                 # Final chunk returned
                 full_waveform = chunk_wave
@@ -751,13 +754,15 @@ def build_app(model_path=None, whisper_path=None):
                 print(f"❌ Transcription failed: {e}")
                 return f"Error during transcription: {e}"
 
-        def vc_handler(*args, progress=gr.Progress()):
-            # 0:text, 1:lang, 2:ref_audio, 3:ref_text, 4:instruct, 5:steps, 6:gs, 7:denoise, 8:punc, 9:speed, 10:dur, 11:pp, 12:po, 13:gen_srt
+        def vc_handler(
+            text, lang, ref, ref_text, instruct, steps, gs, dn, punc, speed, dur, pp, po, gen_srt,
+            progress=gr.Progress()
+        ):
             for res in generate_core(
-                text=args[0], language=args[1], ref_audio=args[2], ref_text=args[3], 
-                instruct=args[4], num_step=args[5], guidance=args[6], denoise=args[7], 
-                convert_punc=args[8], speed=args[9], duration=args[10], 
-                pp=args[11], po=args[12], mode="clone", gen_srt=args[13],
+                text=text, language=lang, ref_audio=ref, ref_text=ref_text, 
+                instruct=instruct, num_step=steps, guidance=gs, denoise=dn, 
+                convert_punc=punc, speed=speed, duration=dur, 
+                pp=pp, po=po, mode="clone", gen_srt=gen_srt,
                 progress=progress
             ):
                 yield res
@@ -814,7 +819,11 @@ def build_app(model_path=None, whisper_path=None):
             outputs=[vc_audio, vc_srt, vc_dl, vc_status]
         ).then(lambda dl: gr.update(visible=bool(dl)), inputs=[vc_dl], outputs=[vc_dl])
 
-        def vd_handler(text, lang, speed, dur, steps, gs, dn, punc, po, gen_srt, *groups, progress=gr.Progress()):
+        def vd_handler(text, lang, speed, dur, steps, gs, dn, punc, po, gen_srt, *groups):
+            # We must capture progress from the closure or explicit arg
+            # In Gradio, handlers with *args or *groups often struggle with Progress.
+            # We'll use a fixed number of dropdowns instead if needed, but let's try this:
+            progress = gr.Progress()
             instruct = ", ".join([g for g in groups if g != "Auto"])
             for res in generate_core(text, lang, None, None, instruct, steps, gs, dn, speed, dur, False, po, "design", gen_srt, punc, progress=progress):
                 yield res
