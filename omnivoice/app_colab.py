@@ -28,13 +28,15 @@ for var in ["HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE"]:
 # ---------------------------------------------------------------------------
 # This edition solves the "Broken Connection" issue specific to Google Colab.
 # 
-# ## 1. THE DEBUG JOURNEY (THE "BROKEN CONNECTION" MYTH)
-# - SYMPTOM: "Broken Connection" error during ASR alignment.
-# - MISCONCEPTION: Initially assumed to be a WebUI timeout.
-# - TRUTH: "Broken Connection" was actually a direct symptom of CUDA OOM. When the 
-#   GPU hits the 15GB limit, the process crashes, dropping the WebSocket instantly.
-# - THE PROOF: VRAM tracking captured: "SRT Error: CUDA out of memory. Tried to 
-#   allocate 602.00 MiB. GPU 0 has a total capacity of 14.56 GiB..."
+# ## 1. THE DEBUG JOURNEY (KEY MILESTONES)
+# - VRAM STABILITY: "Broken Connection" was proven to be a CUDA OOM crash, 
+#   not a timeout. Solved via "Radical Unloading" and batch_size=1.
+# - UI STABILITY (MINUTE JUMP): Highlights used to jump back 60s at minute 
+#   boundaries (e.g. 4:00 -> 3:00). Fixed via JS Hysteresis filter.
+# - UI STABILITY (MODE FLICKER): UI used to flash back to raw text for 0.5s 
+#   at certain time marks. Fixed via Mode Persistence filter (>600ms).
+# - THE SMOKING GUN: VRAM tracking captured: "SRT Error: CUDA out of memory. 
+#   Tried to allocate 602.00 MiB. GPU 0 has a total capacity of 14.56 GiB..."
 # 
 # ## 2. WHY LIGHTNING.AI WORKS BUT COLAB FAILED
 # - SYSTEM OVERHEAD: Colab's Jupyter backend reserves ~800MB of VRAM for its UI 
