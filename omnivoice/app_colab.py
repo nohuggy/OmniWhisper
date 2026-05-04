@@ -57,86 +57,52 @@ from transformers import pipeline
 TTS_ENGINE = None
 WHISPER_PIPE = None
 
-def load_engines(model_path=None, whisper_path=None):
-    """
-    Main engine loader. Handled as a singleton to share the Whisper model between 
-    the ASR pipeline and the Voice-Text alignment logic, saving ~1.6GB VRAM.
-    """
-    global TTS_ENGINE, WHISPER_PIPE
-    
-    # Default paths relative to this script
-    if model_path is None:
-        model_path = os.path.join(os.path.dirname(__file__), "resources")
-    if whisper_path is None:
-        whisper_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "whisper-large-v3-turbo")
-
-    # 1. Handle OmniVoice TTS Model
-    # Check for weights. We need either .bin or .safetensors and it must NOT be an empty directory
-
-    # Check for weights. We need either .bin or .safetensors and it must NOT be an empty directory
-    has_weights = False
-    if os.path.exists(model_path):
-        files = os.listdir(model_path)
-        if any(f.endswith(('.bin', '.safetensors')) for f in files):
-            has_weights = True
-
-    if not has_weights:
-        pass
-
-    if not has_weights:
-        print(f"📥 Downloading OmniVoice Weights (~1.5GB) to ephemeral storage...")
-        print("💡 This happens on every fresh Colab session. Please wait a few minutes.")
-        from huggingface_hub import snapshot_download
-        try:
-            snapshot_download(
-                repo_id="k2-fsa/OmniVoice", 
-                local_dir=model_path, 
-                local_dir_use_symlinks=False, 
-                local_files_only=False,
-                resume_download=True
-            )
-            print("✅ OmniVoice Weights: Download Complete")
-        except Exception as e:
-            print(f"⚠️ Snapshot download failed: {e}. Trying Git fallback...")
-            os.system(f"git clone https://huggingface.co/k2-fsa/OmniVoice {model_path}_tmp && mv {model_path}_tmp/* {model_path}/ && rm -rf {model_path}_tmp")
-            print("✅ OmniVoice Weights: Ready (Fallback)")
-
+def get_tts_engine(model_path=None):
+    global TTS_ENGINE
     if TTS_ENGINE is None:
-        # Use float32 for CPU, float16 for GPU
+        if model_path is None:
+            model_path = os.path.join(os.path.dirname(__file__), "resources")
         device = "cuda" if torch.cuda.is_available() else "cpu"
         dtype = torch.float32 if device == "cpu" else torch.float16
         TTS_ENGINE = TTSEngine(model_path, device=device, dtype=dtype)
-    
-    # 2. Handle Whisper Model
-    if WHISPER_PIPE is None:
-        has_whisper = os.path.exists(whisper_path) and any(f.endswith(('.bin', '.safetensors', '.pt')) for f in os.listdir(whisper_path) if os.path.isfile(os.path.join(whisper_path, f)))
-        if not has_whisper:
-            print(f"📥 Downloading Whisper Turbo (~1.6GB) to ephemeral storage...")
-            print("💡 This happens on every fresh Colab session.")
-            from huggingface_hub import snapshot_download
-            try:
-                snapshot_download(
-                    repo_id='openai/whisper-large-v3-turbo', 
-                    local_dir=whisper_path, 
-                    local_dir_use_symlinks=False, 
-                    local_files_only=False,
-                    resume_download=True
-                )
-                print("✅ Whisper Model: Download Complete")
-            except Exception as e:
-                print(f"⚠️ Whisper download failed: {e}. Trying secondary loader...")
-                os.system(f"git clone https://huggingface.co/openai/whisper-large-v3-turbo {whisper_path}_tmp && mv {whisper_path}_tmp/* {whisper_path}/ && rm -rf {whisper_path}_tmp")
-                print("✅ Whisper Turbo: Ready (Fallback)")
-            
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        WHISPER_PIPE = pipeline("automatic-speech-recognition", model=whisper_path, device=device)
-        print(f"✅ Engines Initialized on {device.upper()}")
-        
-        # Share the same pipe with the TTS engine to save ~1.6GB VRAM/RAM
-        if TTS_ENGINE and hasattr(TTS_ENGINE.model, "_asr_pipe"):
-            print("🔄 Injecting shared Whisper pipe into TTS Engine...")
-            TTS_ENGINE.model._asr_pipe = WHISPER_PIPE
+    return TTS_ENGINE
 
+def get_whisper_pipe(whisper_path=None):
+    global WHISPER_PIPE
+    if WHISPER_PIPE is None:
+        if whisper_path is None:
+            whisper_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "whisper-large-v3-turbo")
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        from transformers import pipeline
+        WHISPER_PIPE = pipeline("automatic-speech-recognition", model=whisper_path, device=device)
+    return WHISPER_PIPE
+
+def unload_tts():
+    global TTS_ENGINE
+    if TTS_ENGINE:
+        print("🗑️ Unloading TTS Engine...")
+        del TTS_ENGINE
+        TTS_ENGINE = None
+        import gc
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+def unload_whisper():
+    global WHISPER_PIPE
+    if WHISPER_PIPE:
+        print("🗑️ Unloading Whisper Engine...")
+        del WHISPER_PIPE
+        WHISPER_PIPE = None
+        import gc
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+def load_engines(model_path=None, whisper_path=None):
+    # This is now just a pre-warm helper for the first load
+    get_tts_engine(model_path)
+    get_whisper_pipe(whisper_path)
     return TTS_ENGINE, WHISPER_PIPE
 
 # ---------------------------------------------------------------------------
@@ -579,25 +545,19 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
     lang_code = language if language != "Auto" else None
     
     try:
-        # 🚀 FULL VRAM SWAP: Move Whisper to CPU, Move TTS to CUDA
-        if WHISPER_PIPE and hasattr(WHISPER_PIPE, "model"):
-            if WHISPER_PIPE.model.device.type != "cpu":
-                print("💾 Moving Whisper to CPU to make room for TTS...")
-                WHISPER_PIPE.model.to("cpu")
-                torch.cuda.empty_cache()
-
-        if TTS_ENGINE and hasattr(TTS_ENGINE, "model"):
-            if next(TTS_ENGINE.model.parameters()).device.type == "cpu":
-                print("🚀 Moving TTS Engine to CUDA...")
-                TTS_ENGINE.model.to("cuda")
-                torch.cuda.empty_cache()
+        # 🚀 RADICAL VRAM: Unload Whisper before TTS
+        unload_whisper()
+        
+        engine = get_tts_engine()
+        
+        start_time = time.time()
 
         # 0. Immediate yield to remove "Loader GIF" and show activity
         if progress: progress(0.01, desc="🚀 Initializing Engines...")
         yield gr.update(), gr.update(), gr.update(), "🚀 Initializing synthesis..."
         
         # 2. TTS Generation (Streaming Progress)
-        gen_iter = TTS_ENGINE.generate(
+        gen_iter = engine.generate(
             text=text.strip(),
             ref_audio=ref_audio,
             ref_text=ref_text,
@@ -630,7 +590,7 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
                     last_yield_time = time.time()
             else:
                 full_waveform = chunk_wave
-                sr = TTS_ENGINE.sampling_rate
+                sr = engine.sampling_rate
         
         # 3. Save Audio Immediately to show player early
         slug = get_slug(text)
@@ -651,16 +611,9 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
         duration_s = len(full_waveform) / sr
         
         if gen_srt:
-            # 🚀 FULL VRAM SWAP: Move TTS to CPU, Move Whisper to CUDA
-            if TTS_ENGINE and hasattr(TTS_ENGINE, "model"):
-                print("💾 Offloading TTS to CPU to make room for ASR...")
-                TTS_ENGINE.model.to("cpu")
-                torch.cuda.empty_cache()
-            
-            if WHISPER_PIPE and hasattr(WHISPER_PIPE, "model"):
-                print("🚀 Moving Whisper to CUDA for ASR...")
-                WHISPER_PIPE.model.to("cuda")
-                torch.cuda.empty_cache()
+            # 🚀 RADICAL VRAM: Unload TTS before ASR
+            unload_tts()
+            pipe = get_whisper_pipe()
             
             # 3. SRT Generation (🚀 RADICAL HEARTBEAT)
             # Run Whisper in a thread so we can keep yielding heartbeats to the browser
@@ -668,7 +621,7 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
             asr_res = {"content": None, "error": None}
             def run_asr():
                 try:
-                    asr_res["content"] = text_to_srt_whisper(text, audio_tuple, WHISPER_PIPE, progress=progress)
+                    asr_res["content"] = text_to_srt_whisper(text, audio_tuple, pipe, progress=progress)
                 except Exception as e:
                     asr_res["error"] = str(e)
             
