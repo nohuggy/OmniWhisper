@@ -807,11 +807,19 @@ def build_app(model_path=None, whisper_path=None):
                 yield ""
                 return
             try:
+                # 🚀 Support On-Demand Loading
+                pipe = get_whisper_pipe()
+                
                 import threading
                 res = {"text": None, "error": None}
                 def run():
-                    try: res["text"] = TTS_ENGINE.transcribe(audio)
-                    except Exception as e: res["error"] = str(e)
+                    try: 
+                        # Use the pipeline directly on the audio path
+                        # Whisper turbo is very fast for short ref audio
+                        out = pipe(audio, chunk_length_s=30, batch_size=1)
+                        res["text"] = out.get("text", "").strip()
+                    except Exception as e: 
+                        res["error"] = str(e)
                 
                 thread = threading.Thread(target=run)
                 thread.start()
@@ -828,6 +836,7 @@ def build_app(model_path=None, whisper_path=None):
                 if res["error"]: yield f"Error: {res['error']}"
                 else: yield res["text"]
             except Exception as e:
+                yield f"Error: {e}"
                 yield f"Error: {e}"
 
         def vc_handler(
