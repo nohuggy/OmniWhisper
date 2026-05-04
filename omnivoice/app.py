@@ -21,15 +21,18 @@ os.environ["GRADIO_ANALYTICS_ENABLED"] = "False"
 # ---------------------------------------------------------------------------
 # ## Technical Maintenance Notes
 # ---------------------------------------------------------------------------
-# To prevent future updates from causing regressions, adhere to the following:
 # 1. Engine Singleton: load_engines() shares the Whisper model between the 
 #    ASR pipeline and the voice-alignment engine. This saves ~1.6GB VRAM.
-# 2. Orchestration Flow: generate_core() must follow the 5-step flow:
-#    Text Processing -> TTS (Chunks) -> ASR Align -> File Sync -> Final Yield.
-# 3. UI Element IDs: The lyric viewer relies on specific IDs in the DOM:
+# 2. Orchestration Flow: generate_core() must follow the flow:
+#    Text -> TTS -> MP3 Optimization -> ASR Align -> Final ZIP.
+# 3. Audio UI Stability: To prevent the "Triple Reload" glitch in Gradio, 
+#    generate_core MUST keep the audio_path variable consistent (pointing to 
+#    the MP3) across all yields. Switching paths (MP3->WAV) triggers reloads.
+# 4. UI Element IDs: The lyric viewer relies on specific IDs in the DOM:
 #    'vc-audio', 'vd-audio', 'vc-srt-text', 'vd-srt-text'. Do not rename.
-# 4. JS Scraper: getSRT() in the JS block is designed to scrape text from 
-#    both interactive (textarea) and static (div) Gradio components.
+# 5. Lyric Viewer Scraper: updateLyrics() in JS uses a "Motion-Aware" scraper.
+#    It only trusts timestamps if they are changing. It explicitly checks 
+#    primaryAudio.paused to prevent hanging in lyric mode when stopped.
 # ---------------------------------------------------------------------------
 
 # Add project root to path

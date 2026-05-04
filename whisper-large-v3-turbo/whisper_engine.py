@@ -27,6 +27,17 @@ def format_timestamp(seconds):
     millis = int(round((td % 1) * 1000))
     return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
 
+# ---------------------------------------------------------------------------
+# ## Technical Maintenance Notes: Subtitle Splitting
+# ---------------------------------------------------------------------------
+# The smart_balanced_split regex is CAREFULLY TUNED to prevent bracket orphans.
+# Group 3 (trailing punctuation) EXPLICITLY EXCLUDES opening brackets and CJK 
+# opening marks (e.g., (, [, {, 「, 『, 《, 〈, “, ‘, （).
+# This ensures that if a token ends with an opening mark, that mark is 
+# treated as leading punctuation for the NEXT token, keeping it on the 
+# same line as its content.
+# ---------------------------------------------------------------------------
+
 def smart_balanced_split(text):
     if not text: return []
     # Split into paragraphs first to avoid remainder accumulation

@@ -17,6 +17,14 @@ To launch the server (and ensure you have the latest updates), run:
 cd OmniWhisper && git pull && bash boot.sh
 ```
 
+## 🔧 Technical Notes
+- **Bracket-Aware Splitting**: The SRT alignment engine (`whisper_engine.py`) handles Chinese/English punctuation and brackets correctly to prevent orphaned marks at the start of lines.
+- **Gradio 5 UI Optimization**: The audio player uses a dual-format approach (MP3 for web streaming, WAV for processing) to ensure zero-latency loading. The UI generation is optimized to prevent redundant component reloads by maintaining a stable path yield.
+- **Auto-Revert Lyric Mode**: The web interface automatically switches between dynamic lyric mode and static SRT text mode when the audio player is paused or stopped using a motion-aware JS scraper.
+
 ## 🛠️ Credits
 Powered by **OmniVoice** and **OpenAI Whisper**.
 Custom calibration logic by **nohuggy**.
+
+---
+*Maintainer Note: Always preserve the dual-yield MP3/WAV strategy in app.py to avoid breaking the Gradio playback experience.*
