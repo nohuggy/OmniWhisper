@@ -586,7 +586,7 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
                     except: pass
                 # 2. Update Status Text (ONLY every 10% to prevent UI Panel Flicker)
                 if curr % max(1, total // 10) == 0 or curr == total:
-                    yield None, "", None, f"⏳ TTS Generation: Chunk {curr}/{total}"
+                    yield gr.no_update, gr.no_update, gr.no_update, f"⏳ TTS Generation: Chunk {curr}/{total}"
             else:
                 # Final chunk returned
                 full_waveform = chunk_wave
@@ -609,9 +609,10 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
         srt_content = ""
         if gen_srt:
             # Re-yield the MP3 immediately after TTS to unfreeze player
-            yield audio_path, "", None, "⏳ TTS Done. Starting ASR alignment (Whisper)..."
+            # We use the real audio_path here so the user can start listening
+            yield audio_path, gr.no_update, gr.no_update, "⏳ TTS Done. Starting ASR alignment (Whisper)..."
             
-            # 🚀 ROBUST HEARTBEAT: Run ASR in a thread and yield every 0.5s to keep connection alive
+            # 🚀 ROBUST HEARTBEAT: Run ASR in a thread and yield every 1.0s to keep connection alive
             import threading
             asr_res = {"content": None, "error": None}
             def run_asr():
@@ -634,23 +635,21 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
                     progress(0.8 + (dot_count * 0.03), desc="⏳ ASR Alignment in progress...")
                 
                 # Constant yield to keep Colab connection alive (Heartbeat)
-                # We yield to the status box less frequently to prevent flickering
-                yield audio_path, "", None, f"⏳ ASR Alignment in progress{dots}"
-                time.sleep(1.0) # 1s is enough for heartbeat
+                # We use gr.no_update for audio/srt/dl to prevent flicker
+                yield gr.no_update, gr.no_update, gr.no_update, f"⏳ ASR Alignment in progress{dots}"
+                time.sleep(1.0)
             
             thread.join()
             if asr_res["error"]:
                 srt_content = f"SRT Error: {asr_res['error']}"
             else:
                 srt_content = asr_res["content"]
-                
-            yield audio_path, srt_content, None, "⏳ ASR Alignment Complete. Packaging ZIP..."
+                yield gr.no_update, srt_content, gr.no_update, "⏳ ASR Alignment Complete. Packaging ZIP..."
         
-        # 4. Final Result Preparation
-        # Keep audio_path as the MP3 for the UI yield to prevent reloads,
-        # but the ZIP will contain the high-quality WAV.
         zip_path = None
-        if srt_content:
+        if gen_srt and srt_content and not srt_content.startswith("SRT Error"):
+            yield gr.no_update, gr.no_update, gr.no_update, "📦 Packaging project files..."
+            
             srt_path = f"outputs/{unique_slug}.srt"
             with open(srt_path, "w", encoding="utf-8") as f:
                 f.write(srt_content)
