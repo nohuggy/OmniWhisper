@@ -40,7 +40,8 @@ for var in ["HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE"]:
 # 
 # ## 2. WHY LIGHTNING.AI WORKS BUT COLAB FAILED
 # - SYSTEM OVERHEAD: Colab's Jupyter backend reserves ~800MB of VRAM for its UI 
-#   bridge. Lightning.ai "headless" environments have 0MB system overhead.
+#   bridge. Lightning.ai (when used with VSCode) is significantly more 
+#   lightweight and has near-zero system VRAM overhead.
 # - MARGIN OF ERROR: That 800MB is the critical margin. Without it, Whisper Large 
 #   V3 cannot perform "Word" alignment if OmniVoice is also in memory.
 # 
