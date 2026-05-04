@@ -24,21 +24,18 @@ for var in ["HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE"]:
         del os.environ[var]
 
 # ---------------------------------------------------------------------------
-# Global Stability Config
+# 🚀 COLAB STABILITY ANNOTATION (CRITICAL)
 # ---------------------------------------------------------------------------
-os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
-# 1. Engine Singleton: load_engines() shares the Whisper model between the 
-#    ASR pipeline and the voice-alignment engine. This saves ~1.6GB VRAM.
-# 2. Orchestration Flow: generate_core() must follow the flow:
-#    Text -> TTS -> MP3 Optimization -> ASR Align -> Final ZIP.
-# 3. Audio UI Stability: To prevent the "Triple Reload" glitch in Gradio, 
-#    generate_core MUST keep the audio_path variable consistent (pointing to 
-#    the MP3) across all yields. Switching paths (MP3->WAV) triggers reloads.
-# 4. UI Element IDs: The lyric viewer relies on specific IDs in the DOM:
-#    'vc-audio', 'vd-audio', 'vc-srt-text', 'vd-srt-text'. Do not rename.
-# 5. Lyric Viewer Scraper: updateLyrics() in JS uses a "Motion-Aware" scraper.
-#    It only trusts timestamps if they are changing. It explicitly checks 
-#    primaryAudio.paused to prevent hanging in lyric mode when stopped.
+# This edition of OmniWhisper is specially optimized for Google Colab T4.
+# It solves the "Broken Connection" and "CUDA OOM" issues using:
+# 1. RADICAL UNLOADING: To fit two massive models (OmniVoice + Whisper) 
+#    on a single 16GB T4, models are COMPLETELY deleted and re-loaded 
+#    on-demand. This provides each model with a 15GB "Clean Slate".
+# 2. ACTIVE HEARTBEAT: Uses a live elapsed timer in the status message 
+#    to force browser re-renders every 0.8s, keeping the WebSocket alive.
+# 3. PRODUCTION SETTINGS: Forced batch_size=1 and return_timestamps=True 
+#    to match the stable Lightning AI setup and prevent peak VRAM spikes.
+# ⚠️ DO NOT REVERT these patterns, as they are required for Colab stability.
 # ---------------------------------------------------------------------------
 
 # Add project root to path
