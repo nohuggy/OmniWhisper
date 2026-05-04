@@ -297,26 +297,31 @@ _LYRICS_JS = """
             
             // Method 2: UI Scraper (For Gradio 5 Waveform / WebAudio)
             if (currentTime < 0) {
-                var allText = audioContainer.innerText;
-                var matches = allText.match(/(\d+:\d+)/g);
-                if (matches && matches.length > 0) {
-                    // Find the first non-zero time if possible, otherwise first match
-                    var parsed = -1;
-                    for (var m=0; m<matches.length; m++) {
-                        var p = parseTimeStr(matches[m]);
-                        if (p > 0) { parsed = p; break; }
+                // Broad search for time strings in all sub-elements (spans, divs)
+                var timeEls = audioContainer.querySelectorAll('span, div, p');
+                var parsed = -1;
+                for (var i = 0; i < timeEls.length; i++) {
+                    var txt = (timeEls[i].innerText || "").trim();
+                    if (/^\d+:\d+$/.test(txt)) {
+                        parsed = parseTimeStr(txt);
+                        if (parsed >= 0) break;
                     }
-                    if (parsed < 0) parsed = parseTimeStr(matches[0]);
-                    
-                    if (parsed >= 0) {
-                        if (parsed !== viewer._lastMotionTime) {
-                            viewer._lastMotionTime = parsed;
-                            viewer._lastMotionUpdate = Date.now();
-                        }
-                        // Assume playing if motion was seen in the last 2.5 seconds
-                        if (Date.now() - viewer._lastMotionUpdate < 2500) {
-                            currentTime = parsed;
-                        }
+                }
+                
+                // Fallback to innerText regex if targeted search fails
+                if (parsed < 0) {
+                    var matches = audioContainer.innerText.match(/(\d+:\d+)/g);
+                    if (matches && matches.length > 0) parsed = parseTimeStr(matches[0]);
+                }
+
+                if (parsed >= 0) {
+                    if (parsed !== viewer._lastMotionTime) {
+                        viewer._lastMotionTime = parsed;
+                        viewer._lastMotionUpdate = Date.now();
+                    }
+                    // Assume playing if motion was detected in last 2.5s
+                    if (Date.now() - viewer._lastMotionUpdate < 2500) {
+                        currentTime = parsed;
                     }
                 }
             }
@@ -513,16 +518,20 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
                 full_waveform = chunk_wave
                 sr = TTS_ENGINE.sampling_rate
         
-        audio_tuple = (sr, full_waveform)
-        duration_s = len(full_waveform) / sr
+        # 3. Save Audio Immediately to show player early
+        slug = get_slug(text)
+        unique_slug = f"{slug}_{int(time.time())}"
+        os.makedirs("outputs", exist_ok=True)
+        audio_path = f"outputs/{unique_slug}.wav"
+        sf.write(audio_path, full_waveform, sr)
         
-        # 3. SRT Generation
+        # 4. SRT Generation
         srt_content = ""
         if gen_srt:
-            yield None, "", None, f"⏳ TTS Done ({duration_s:.1f}s). Running ASR for alignment..."
+            yield audio_path, "", None, f"⏳ TTS Done ({duration_s:.1f}s). Running ASR for alignment..."
             srt_content = text_to_srt_whisper(text, audio_tuple, WHISPER_PIPE)
             # Show Subtitles immediately
-            yield None, srt_content, None, f"⏳ ASR Done. Finalizing files..."
+            yield audio_path, srt_content, None, f"⏳ ASR Done. Finalizing files..."
         
         # 4. Final Result Preparation
         slug = get_slug(text)
@@ -544,7 +553,7 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
             with zipfile.ZipFile(zip_path, "w") as zipf:
                 zipf.write(audio_path, arcname=f"{slug}.wav")
                 zipf.write(srt_path, arcname=f"{slug}.srt")
-            # Show everything as soon as ready to avoid clearing the UI
+            # Final yield with everything
             yield audio_path, srt_content, zip_path, f"⏳ Files ready. Finishing..."
         else:
             zip_path = audio_path
