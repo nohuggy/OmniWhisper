@@ -34,6 +34,10 @@ TTS_ENGINE = None
 WHISPER_PIPE = None
 
 def load_engines(model_path=None, whisper_path=None):
+    """
+    Main engine loader. Handled as a singleton to share the Whisper model between 
+    the ASR pipeline and the Voice-Text alignment logic, saving ~1.6GB VRAM.
+    """
     global TTS_ENGINE, WHISPER_PIPE
     
     # Default paths relative to this script
@@ -448,6 +452,15 @@ def text_to_srt_whisper(text, audio_tuple, pipe, language="zh"):
         return f"SRT Error: {e}"
 
 def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guidance, denoise, speed, duration, pp, po, mode, gen_srt=True, convert_punc=True):
+    """
+    Central orchestration loop for OmniVoice synthesis.
+    Flow: 
+    1. Text Processing & Punctuation Unification.
+    2. TTS Synthesis (yields chunk progress).
+    3. ASR-based word alignment (Whisper).
+    4. SRT & ZIP generation.
+    5. Final synchronized yield of all result components.
+    """
     if not text or not text.strip():
         yield None, "", None, "Text is required."
         return
@@ -578,7 +591,7 @@ def build_app(model_path=None, whisper_path=None):
                             vc_speed = gr.Slider(0.5, 2.0, value=0.9, step=0.05, label="Speed")
                             vc_dur = gr.Number(label="Fixed Duration (sec)", value=0)
                             vc_steps = gr.Slider(4, 64, value=32, step=4, label="Inference Steps")
-                            vc_gs = gr.Slider(0, 5, value=2.0, step=0.1, label="Guidance Scale")
+                            vc_gs = gr.Slider(0, 5, value=3.0, step=0.1, label="Guidance Scale")
                             vc_dn = gr.Checkbox(label="Denoise", value=True)
                             vc_pp = gr.Checkbox(label="Clean Ref Audio (Silence Removal)", value=True)
                             vc_po = gr.Checkbox(label="Trim Output Silence", value=True)
@@ -619,7 +632,7 @@ def build_app(model_path=None, whisper_path=None):
                             vd_speed = gr.Slider(0.5, 2.0, value=0.9, step=0.05, label="Speed")
                             vd_dur = gr.Number(label="Fixed Duration (sec)", value=0)
                             vd_steps = gr.Slider(4, 64, value=32, step=4, label="Inference Steps")
-                            vd_gs = gr.Slider(0, 5, value=2.0, step=0.1, label="Guidance Scale")
+                            vd_gs = gr.Slider(0, 5, value=3.0, step=0.1, label="Guidance Scale")
                             vd_dn = gr.Checkbox(label="Denoise", value=True)
                             vd_po = gr.Checkbox(label="Trim Output Silence", value=True)
                             vd_gen_srt = gr.Checkbox(label="Generate Subtitles (SRT)", value=True)
