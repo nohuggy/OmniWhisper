@@ -719,6 +719,7 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
                     # Slow crawl from 0.8 to 0.95 during ASR
                     progress(0.8 + (dot_count * 0.03), desc=f"🔍 Aligning{dots}")
                 
+                elapsed = int(time.time() - start_time)
                 # HEARTBEAT: Constant yield to keep Colab/Gradio connection active
                 # Faster heartbeat (0.8s) for long-form stability
                 # 🚀 CRITICAL: We yield audio_path explicitly to keep the player from refreshing
