@@ -17,6 +17,20 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 os.environ["PYTHONWARNINGS"] = "ignore"
 os.environ["GRADIO_ANALYTICS_ENABLED"] = "False"
 
+# ---------------------------------------------------------------------------
+# ## Technical Maintenance Notes
+# ---------------------------------------------------------------------------
+# To prevent future updates from causing regressions, adhere to the following:
+# 1. Engine Singleton: load_engines() shares the Whisper model between the 
+#    ASR pipeline and the voice-alignment engine. This saves ~1.6GB VRAM.
+# 2. Orchestration Flow: generate_core() must follow the 5-step flow:
+#    Text Processing -> TTS (Chunks) -> ASR Align -> File Sync -> Final Yield.
+# 3. UI Element IDs: The lyric viewer relies on specific IDs in the DOM:
+#    'vc-audio', 'vd-audio', 'vc-srt-text', 'vd-srt-text'. Do not rename.
+# 4. JS Scraper: getSRT() in the JS block is designed to scrape text from 
+#    both interactive (textarea) and static (div) Gradio components.
+# ---------------------------------------------------------------------------
+
 # Add project root to path
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 for p in [project_root, os.path.dirname(os.path.abspath(__file__)), os.path.join(project_root, "whisper-large-v3-turbo")]:
