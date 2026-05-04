@@ -18,6 +18,11 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 os.environ["PYTHONWARNINGS"] = "ignore"
 os.environ["GRADIO_ANALYTICS_ENABLED"] = "False"
 
+# Unset offline mode variables immediately if they exist to prevent blocking downloads
+for var in ["HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE"]:
+    if var in os.environ:
+        del os.environ[var]
+
 # ---------------------------------------------------------------------------
 # ## Technical Maintenance Notes
 # ---------------------------------------------------------------------------
@@ -65,11 +70,7 @@ def load_engines(model_path=None, whisper_path=None):
         whisper_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "whisper-large-v3-turbo")
 
     # 1. Handle OmniVoice TTS Model
-    def disable_offline():
-        for var in ["HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE"]:
-            if var in os.environ:
-                print(f"🔓 Disabling {var} for download...")
-                del os.environ[var]
+    # Check for weights. We need either .bin or .safetensors and it must NOT be an empty directory
 
     # Check for weights. We need either .bin or .safetensors and it must NOT be an empty directory
     has_weights = False
@@ -79,7 +80,7 @@ def load_engines(model_path=None, whisper_path=None):
             has_weights = True
 
     if not has_weights:
-        disable_offline()
+        pass
 
     if not has_weights:
         print(f"📥 Downloading OmniVoice Weights to {model_path}...")
