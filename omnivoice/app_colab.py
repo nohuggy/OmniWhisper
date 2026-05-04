@@ -578,23 +578,21 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
             postprocess_output=po
         )
         
-        # 2. TTS Generation (Smooth Progress)
-        if progress:
-            gen_iter = progress.tqdm(gen_iter, desc="⏳ Generating Audio...", total=num_step)
-            
+        # 2. TTS Generation
         full_waveform = []
         sr = 16000
         
-        last_yield_time = time.time()
         for curr, total, chunk_wave in gen_iter:
             if chunk_wave is None:
-                # Heartbeat every 2 seconds to keep connection alive without flickering
-                if time.time() - last_yield_time > 2.0:
-                    yield gr.update(), gr.update(), gr.update(), f"⏳ TTS Generation: {curr}/{total}"
-                    last_yield_time = time.time()
+                # Update progress bar (Smooth and doesn't flicker)
+                if progress:
+                    progress(curr/total * 0.8, desc=f"⏳ TTS ({curr}/{total})")
             else:
                 full_waveform = chunk_wave
                 sr = TTS_ENGINE.sampling_rate
+        
+        # Intermediate yield to unfreeze UI after TTS
+        yield None, gr.update(), gr.update(), "⏳ TTS Done. Starting ASR alignment..."
         
         audio_tuple = (sr, full_waveform)
         duration_s = len(full_waveform) / sr
@@ -612,41 +610,16 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
         # 4. SRT Generation
         srt_content = ""
         if gen_srt:
-            # 1. Show audio immediately
-            yield audio_path, gr.update(), gr.update(), "⏳ TTS Done. Starting ASR alignment..."
-            
-            # 2. Start ASR with explicit Progress updates
+            # 3. SRT Generation (Blocking call but with Progress)
             if progress: progress(0.8, desc="🔍 Aligning Subtitles (Whisper)...")
             
-            import threading
-            asr_res = {"content": None, "error": None}
-            def run_asr():
-                try:
-                    asr_res["content"] = text_to_srt_whisper(text, audio_tuple, WHISPER_PIPE)
-                except Exception as e:
-                    asr_res["error"] = str(e)
+            try:
+                srt_content = text_to_srt_whisper(text, audio_tuple, WHISPER_PIPE, progress=progress)
+            except Exception as e:
+                srt_content = f"SRT Error: {str(e)}"
             
-            thread = threading.Thread(target=run_asr)
-            thread.start()
-            
-            # 3. Heartbeat loop during ASR
-            dot_count = 0
-            while thread.is_alive():
-                dot_count = (dot_count + 1) % 4
-                dots = "." * dot_count
-                if progress:
-                    # Slow crawl from 0.8 to 0.95
-                    progress(0.8 + (dot_count * 0.03), desc=f"🔍 Aligning{dots}")
-                
-                yield gr.update(), gr.update(), gr.update(), f"⏳ ASR Alignment in progress{dots}"
-                time.sleep(1.5) # Slower heartbeat to prevent flicker
-            
-            thread.join()
-            if asr_res["error"]:
-                srt_content = f"SRT Error: {asr_res['error']}"
-            else:
-                srt_content = asr_res["content"]
-                yield gr.update(), srt_content, gr.update(), "⏳ ASR Alignment Complete. Packaging ZIP..."
+            if progress: progress(0.95, desc="📦 Packaging ZIP...")
+            yield audio_path, srt_content, gr.update(), "⏳ ASR Complete. Packaging ZIP..."
         
         zip_path = None
         if gen_srt and srt_content and not srt_content.startswith("SRT Error"):
