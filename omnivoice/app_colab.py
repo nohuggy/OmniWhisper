@@ -598,7 +598,7 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
             progress(curr/total if total > 0 else 0, desc=f"TTS Chunk {curr}/{total}")
             if chunk_wave is None:
                 # Progress update
-                yield None, "", None, f"⏳ Generation in progress... Synthesizing TTS (Chunk {curr}/{total})"
+                yield gr.update(), gr.update(), gr.update(), f"⏳ Generation in progress... Synthesizing TTS (Chunk {curr}/{total})"
             else:
                 # Final chunk returned
                 full_waveform = chunk_wave
@@ -625,7 +625,7 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
             torch.cuda.empty_cache()
             
             # Yield early to keep the connection alive (Heartbeat)
-            yield audio_path, "", None, f"⏳ TTS Done ({duration_s:.1f}s). Preparing ASR alignment..."
+            yield audio_path, gr.update(), gr.update(), f"⏳ TTS Done ({duration_s:.1f}s). Preparing ASR alignment..."
             
             srt_content = text_to_srt_whisper(text, audio_tuple, WHISPER_PIPE)
             
@@ -633,10 +633,10 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
             torch.cuda.empty_cache()
             
             if not srt_content or "SRT Error" in srt_content:
-                yield audio_path, "", None, f"⚠️ SRT generation failed: {srt_content}"
+                yield audio_path, gr.update(), gr.update(), f"⚠️ SRT generation failed: {srt_content}"
             else:
                 progress(0.95, desc="Packaging...")
-                yield audio_path, srt_content, None, f"⏳ SRT Generated. Finalizing package..."
+                yield audio_path, srt_content, gr.update(), f"⏳ SRT Generated. Finalizing package..."
         
         # 4. Final Result Preparation
         # Keep audio_path as the MP3 for the UI yield to prevent reloads,
