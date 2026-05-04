@@ -200,14 +200,16 @@ _SUBTITLE_CSS = """
     display: none;
 }
 #vc-srt-text, #vd-srt-text { 
-    height: 250px; 
-    overflow: hidden !important; 
+    height: 260px !important; 
+    overflow: visible !important; 
 }
 #vc-srt-text textarea, #vd-srt-text textarea { 
+    height: 260px !important;
     overflow-y: auto !important; 
     font-family: 'Courier New', Courier, monospace;
     font-size: 0.9em;
     background: transparent !important;
+    padding-bottom: 20px !important;
 }
 .lyric-line {
     text-align: center;
@@ -435,10 +437,14 @@ def text_to_srt_whisper(text, audio_tuple, pipe, language="zh", progress=None):
         waveform_f32 = waveform.astype(np.float32) / 32767.0
         
         # Whisper pipeline expects a dict or numpy array
+        print(f"[SRT] Starting Whisper pipeline inference (Audio: {len(waveform_f32)/sr:.1f}s)...")
         result = pipe({"sampling_rate": sr, "raw": waveform_f32}, return_timestamps="word")
         chunks = result.get("chunks", [])
+        print(f"[SRT] Whisper inference complete. Got {len(chunks)} word chunks.")
         
+        print(f"[SRT] Running smart_balanced_split on {len(text)} chars...")
         segments = smart_balanced_split(text)
+        print(f"[SRT] Split into {len(segments)} segments.")
         
         # 1. Global Clock Reconstruction (Fixing the Whisper 30s Wall)
         abs_chunks = []
@@ -872,10 +878,17 @@ def build_app(model_path=None, whisper_path=None):
         vc_transcribe_btn.click(transcribe_ref, inputs=[vc_ref], outputs=[vc_ref_text])
 
         vc_btn.click(
+            lambda: (gr.update(interactive=False), gr.update(interactive=False), gr.update(visible=False), "⏳ Initializing..."),
+            outputs=[vc_btn, vc_transcribe_btn, vc_dl, vc_status]
+        ).then(
             vc_handler,
             inputs=[vc_text, vc_lang, vc_ref, vc_ref_text, vc_instruct, vc_steps, vc_gs, vc_dn, vc_punc, vc_speed, vc_dur, vc_pp, vc_po, vc_gen_srt],
             outputs=[vc_audio, vc_srt, vc_dl, vc_status]
-        ).then(lambda dl: gr.update(visible=bool(dl)), inputs=[vc_dl], outputs=[vc_dl])
+        ).then(
+            lambda dl: (gr.update(interactive=True), gr.update(interactive=True), gr.update(visible=bool(dl))), 
+            inputs=[vc_dl], 
+            outputs=[vc_btn, vc_transcribe_btn, vc_dl]
+        )
 
 
         def vd_handler(
