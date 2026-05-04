@@ -1,10 +1,10 @@
 torch>=2.4.0
 torchaudio>=2.4.0
-torchvision>=0.19.0
+torchvision
 transformers>=5.3.0
 accelerate
 pydub
-gradio<6
+gradio
 tensorboardX
 webdataset
 numpy
@@ -15,7 +15,6 @@ unidecode
 BeautifulSoup4
 lxml
 python-dotenv
-pytest
 tiktoken
 sentencepiece
 huggingface_hub
