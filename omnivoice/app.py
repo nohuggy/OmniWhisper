@@ -296,21 +296,20 @@ _LYRICS_JS = """
                     }
                 }
             }
-
-            // 3. UI Scraper (Gradio 5 Waveform) - Only active if moving
+            // 3. UI Scraper (Gradio 5 Waveform) - Smarter detection
             if (currentTime < 0) {
                 var txt = audioContainer.innerText || "";
                 var matches = txt.match(/(\d+:\d+)/g);
-                if (matches) {
-                    for (var m = 0; m < matches.length; m++) {
-                        var p = parseTimeStr(matches[m]);
-                        if (p > 0.05) {
-                            if (p !== viewer._lastP) { viewer._lastP = p; viewer._lastT = Date.now(); }
-                            if (Date.now() - (viewer._lastT || 0) < 1000) { currentTime = p; break; }
-                        }
-                    }
+                if (matches && matches.length >= 1) {
+                    // Current time is usually the first match. Total duration is the last.
+                    var p = parseTimeStr(matches[0]);
+                    if (p > 0) {
+                        if (p !== viewer._lastP) { viewer._lastP = p; viewer._lastT = Date.now(); }
+                        if (Date.now() - (viewer._lastT || 0) < 800) { currentTime = p; }
+                    } else if (p === 0 && matches.length > 1) { viewer._lastT = 0; }
                 }
             }
+
 
             if (currentTime >= 0) {
                 var srtVal = getSRT(srtBoxId);
@@ -547,8 +546,9 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
         # 4. Final Result Preparation
         zip_path = None
         
-        # Use the master WAV for the final result
-        audio_path = wav_path
+        # Keep audio_path as the optimized MP3 to avoid UI player reloads
+        # The WAV is already saved as wav_path and will be used for the ZIP.
+        pass
         
         zip_path = None
         if srt_content:
