@@ -1,10 +1,10 @@
-# 🎙️ OmniWhisper (Optimized for Lightning.ai)
+# 🎙️ OmniWhisper
 
 OmniWhisper is a production-grade **Text-to-Speech (TTS)** and **SRT Generation** pipeline specifically optimized for deployment on **Lightning.ai**. It integrates the high-fidelity voice cloning of OmniVoice with the robust, millisecond-accurate alignment of Whisper-Large-v3-Turbo.
 
 ## 🚀 Installation & Launch
 
-### 1. Google Colab (Recommended for GPU access)
+### 1. Google Colab
 Or run it in Google Colab: [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/nohuggy/OmniWhisper/blob/master/colab.ipynb)
 
 ### 2. Lightning.ai
