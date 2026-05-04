@@ -64,12 +64,7 @@ from transformers import (
 try:
     from transformers import HiggsAudioV2TokenizerModel
 except ImportError:
-    # Fallback for older or custom transformers versions
-    try:
-        from transformers.models.higgs_audio_v2.modeling_higgs_audio_v2_tokenizer import HiggsAudioV2TokenizerModel
-    except ImportError:
-        # Last resort: try to use AutoModel if registered
-        HiggsAudioV2TokenizerModel = None 
+    HiggsAudioV2TokenizerModel = None
 from transformers.modeling_outputs import ModelOutput
 from transformers.models.auto import CONFIG_MAPPING, AutoConfig
 
@@ -297,7 +292,7 @@ class OmniVoice(PreTrainedModel):
                         audio_tokenizer_path, device_map=tokenizer_device
                     )
                 else:
-                    logger.warning("HiggsAudioV2TokenizerModel not found in transformers. Using AutoModel fallback.")
+                    logger.warning("HiggsAudioV2TokenizerModel not found in transformers, falling back to AutoModel (trust_remote_code=True)")
                     model.audio_tokenizer = AutoModel.from_pretrained(
                         audio_tokenizer_path, device_map=tokenizer_device, trust_remote_code=True
                     )

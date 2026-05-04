@@ -41,7 +41,7 @@ for p in [project_root, os.path.dirname(os.path.abspath(__file__)), os.path.join
     if p not in sys.path:
         sys.path.append(p)
 
-from omni_engine import TTSEngine, get_slug
+from omnivoice.omni_engine_colab import TTSEngine, get_slug
 from whisper_engine import format_timestamp, unify_punctuation, smart_balanced_split, align_robust
 from transformers import pipeline
 
@@ -187,7 +187,7 @@ button.primary, button.secondary {
 .hidden-lyrics { display: none !important; }
 """
 
-_LYRICS_JS = """
+_LYRICS_JS = r"""
 () => {
     console.log('[Lyrics] Initializing Robust Polling Engine...');
     
