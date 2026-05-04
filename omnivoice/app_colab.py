@@ -437,10 +437,23 @@ def text_to_srt_whisper(text, audio_tuple, pipe, language="zh", progress=None):
         waveform_f32 = waveform.astype(np.float32) / 32767.0
         
         # Whisper pipeline expects a dict or numpy array
-        print(f"[SRT] Starting Whisper pipeline inference (Audio: {len(waveform_f32)/sr:.1f}s)...")
-        result = pipe({"sampling_rate": sr, "raw": waveform_f32}, return_timestamps="word")
+        # 🚀 RADICAL FIX: For long audio, we MUST use chunk_length_s to prevent OOM and timeouts.
+        # This forces Whisper to process in 30s windows internally.
+        print(f"[SRT] Starting Chunked Whisper inference (Audio: {len(waveform_f32)/sr:.1f}s)...")
+        if torch.cuda.is_available():
+            print(f"[SRT] VRAM Before ASR: {torch.cuda.memory_allocated()/1e9:.2f}GB")
+            
+        result = pipe(
+            {"sampling_rate": sr, "raw": waveform_f32}, 
+            chunk_length_s=30, 
+            batch_size=8, 
+            return_timestamps="word"
+        )
+        
         chunks = result.get("chunks", [])
         print(f"[SRT] Whisper inference complete. Got {len(chunks)} word chunks.")
+        if torch.cuda.is_available():
+            print(f"[SRT] VRAM After ASR: {torch.cuda.memory_allocated()/1e9:.2f}GB")
         
         print(f"[SRT] Running smart_balanced_split on {len(text)} chars...")
         segments = smart_balanced_split(text)
