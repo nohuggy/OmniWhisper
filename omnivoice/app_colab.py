@@ -33,8 +33,9 @@ for var in ["HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE"]:
 #    on-demand. This provides each model with a 15GB "Clean Slate".
 # 2. ACTIVE HEARTBEAT: Uses a live elapsed timer in the status message 
 #    to force browser re-renders every 0.8s, keeping the WebSocket alive.
-# 3. PRODUCTION SETTINGS: Forced batch_size=1 and return_timestamps=True 
-#    to match the stable Lightning AI setup and prevent peak VRAM spikes.
+# 3. BALANCED PRECISION: Uses return_timestamps="word" for perfect SRT 
+#    alignment, but FORCES batch_size=1 and chunk_length_s=30 to prevent 
+#    VRAM spikes. This matches the stable production setup from Lightning AI.
 # ⚠️ DO NOT REVERT these patterns, as they are required for Colab stability.
 # ---------------------------------------------------------------------------
 
