@@ -234,7 +234,7 @@ def run_production_pipeline(input_dir, output_dir, model_path):
         # Inference
         # Inference: Optimized for Direct TTS Mapping
         print("     Running Inference...")
-        res = pipe(audio_np, return_timestamps=True, chunk_length_s=30, batch_size=1)
+        res = pipe(audio_np, return_timestamps="word")
         whisper_chunks = res.get("chunks", [])
         
         # In this environment, pipeline already provides absolute timestamps.
