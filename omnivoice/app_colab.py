@@ -558,6 +558,10 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
     start_time = time.time()
     lang_code = language if language != "Auto" else None
     
+    # 🚀 IMMEDIATE YIELD to prevent "Loader GIF" lockup
+    if progress: progress(0, desc="🚀 Initializing...")
+    yield gr.update(), gr.update(), gr.update(), "🚀 Initializing..."
+    
     try:
         # 2. TTS Generation (Streaming Progress)
         full_waveform = []
@@ -587,12 +591,15 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
                 # Update progress bar (Smooth and doesn't flicker)
                 if progress:
                     progress(curr/total * 0.8, desc=f"⏳ TTS ({curr}/{total})")
+                # Periodic status yield to keep connection alive
+                if curr % max(1, total // 5) == 0:
+                    yield gr.update(), gr.update(), gr.update(), f"⏳ TTS Generation: {curr}/{total}"
             else:
                 full_waveform = chunk_wave
                 sr = TTS_ENGINE.sampling_rate
         
         # Intermediate yield to unfreeze UI after TTS
-        yield None, gr.update(), gr.update(), "⏳ TTS Done. Starting ASR alignment..."
+        yield gr.update(), gr.update(), gr.update(), "⏳ TTS Done. Starting ASR alignment..."
         
         audio_tuple = (sr, full_waveform)
         duration_s = len(full_waveform) / sr
@@ -610,13 +617,34 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
         # 4. SRT Generation
         srt_content = ""
         if gen_srt:
-            # 3. SRT Generation (Blocking call but with Progress)
+            # 3. SRT Generation with Heartbeat Thread
             if progress: progress(0.8, desc="🔍 Aligning Subtitles (Whisper)...")
+            yield audio_path, gr.update(), gr.update(), "⏳ Starting ASR alignment..."
             
-            try:
-                srt_content = text_to_srt_whisper(text, audio_tuple, WHISPER_PIPE, progress=progress)
-            except Exception as e:
-                srt_content = f"SRT Error: {str(e)}"
+            import threading
+            asr_res = {"content": None, "error": None}
+            def run_asr():
+                try:
+                    # Explicitly pass the shared Whisper pipe
+                    asr_res["content"] = text_to_srt_whisper(text, audio_tuple, WHISPER_PIPE)
+                except Exception as e:
+                    asr_res["error"] = str(e)
+            
+            thread = threading.Thread(target=run_asr)
+            thread.start()
+            
+            # Constant heartbeat during ASR to prevent Colab disconnection
+            dot_count = 0
+            while thread.is_alive():
+                dot_count = (dot_count + 1) % 4
+                dots = "." * dot_count
+                if progress:
+                    progress(0.8 + (dot_count * 0.03), desc=f"🔍 Aligning{dots}")
+                yield gr.update(), gr.update(), gr.update(), f"⏳ ASR Alignment in progress{dots}"
+                time.sleep(2.0)
+            
+            thread.join()
+            srt_content = asr_res["content"] or f"SRT Error: {asr_res['error']}"
             
             if progress: progress(0.95, desc="📦 Packaging ZIP...")
             yield audio_path, srt_content, gr.update(), "⏳ ASR Complete. Packaging ZIP..."
