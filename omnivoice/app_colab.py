@@ -160,21 +160,12 @@ CSS = """
 
 /* Restore the output-panel aesthetics */
 .output-panel, 
-.output-panel {
-    background: rgba(0, 0, 0, 0.05) !important;
-    border-radius: 12px !important;
-    padding: 15px !important;
-    border: 1px solid rgba(0, 0, 0, 0.1) !important;
-    min-height: 200px;
-    display: flex;
-    flex-direction: column;
+.output-panel * {
+    background-color: #1f2937 !important;
+    border: none !important;
+    box-shadow: none !important;
 }
-
-#vc-srt-text textarea, #vd-srt-text textarea {
-    overflow-y: auto !important;
-    font-family: 'Courier New', Courier, monospace !important;
-    line-height: 1.4 !important;
-}
+.output-panel { gap: 0 !important; overflow: visible !important; }
 
 .custom-label {
     display: inline-flex; align-items: center; gap: 6px;
@@ -194,14 +185,28 @@ button.primary, button.secondary {
     font-weight: 700 !important;
     font-family: inherit !important;
 }
+"""
 
-.lyrics-viewer {
+_SUBTITLE_CSS = """
+#vc-lyrics, #vd-lyrics {
+    background: #111;
+    color: #fff;
+    border-radius: 12px;
     height: 260px;
     width: 100% !important;
     overflow-y: auto;
     padding: 10px 20px !important;
     box-sizing: border-box;
     display: none;
+}
+#vc-srt-text, #vd-srt-text { 
+    height: 250px; 
+    overflow-y: auto !important; 
+}
+#vc-srt-text textarea, #vd-srt-text textarea { 
+    overflow-y: auto !important; 
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 0.9em;
 }
 .lyric-line {
     text-align: center;
@@ -222,33 +227,42 @@ button.primary, button.secondary {
 .lyric-line.past {
     color: rgba(255, 255, 255, 0.7) !important;
 }
-.hidden-lyrics { display: none !important; }
+.hidden-lyrics { display: none !important }
 """
+
+CSS += _SUBTITLE_CSS
 
 _LYRICS_JS = r"""
 () => {
     console.log('[Lyrics] Initializing Robust Polling Engine...');
     
-    function parseSRT(raw) {
-        if (!raw) return [];
-        // Handle various line endings and extra spaces
-        var blocks = raw.trim().split(/\r?\n\r?\n/);
-        var cues = [];
-        for (var b = 0; b < blocks.length; b++) {
-            var lines = blocks[b].trim().split(/\r?\n/);
-            if (lines.length < 3) continue;
-            var times = lines[1].split(' --> ');
-            if (times.length !== 2) continue;
-            var s = times[0].replace(',','.').split(':');
-            var e = times[1].replace(',','.').split(':');
+    function parseTimestamp(s) {
+        if (!s) return 0;
+        var p = s.replace(',','.').split(':');
+        if (p.length === 3) return parseInt(p[0])*3600 + parseInt(p[1])*60 + parseFloat(p[2]);
+        return parseFloat(p[p.length-1]);
+    }
+
+    function parseSRT(data) {
+        if (!data) return [];
+        var res = [];
+        var blocks = data.trim().split(/\n\s*\n/);
+        blocks.forEach(function(block) {
             try {
-                var startSec = parseFloat(s[0])*3600 + parseFloat(s[1])*60 + parseFloat(s[2]);
-                var endSec   = parseFloat(e[0])*3600 + parseFloat(e[1])*60 + parseFloat(e[2]);
-                var txt = lines.slice(2).join(' ');
-                cues.push({start: startSec, end: endSec, text: txt});
-            } catch(err) {}
-        }
-        return cues;
+                var lines = block.split('\n');
+                if (lines.length >= 3) {
+                    var timeMatch = lines[1].match(/(\d+:\d+:\d+,\d+)\s*-->\s*(\d+:\d+:\d+,\d+)/);
+                    if (timeMatch) {
+                        res.push({
+                            start: parseTimestamp(timeMatch[1]),
+                            end: parseTimestamp(timeMatch[2]),
+                            text: lines.slice(2).join(' ')
+                        });
+                    }
+                }
+            } catch(e) { console.error("SRT Parse Error", e); }
+        });
+        return res;
     }
 
     function renderLyrics(viewer, cues, activeIdx) {
@@ -284,15 +298,10 @@ _LYRICS_JS = r"""
         }
     }
 
-    function getSRT(srtBoxId) {
-        var box = document.getElementById(srtBoxId);
-        if (!box) return '';
-        var ta = box.querySelector('textarea');
-        if (ta) return ta.value;
-        return box.innerText || '';
-    }
-
-    var PAIRS = [['vc-audio', 'vc-lyrics', 'vc-srt-text'], ['vd-audio', 'vd-lyrics', 'vd-srt-text']];
+    var PAIRS = [
+        ['vc-audio', 'vc-lyrics', 'vc-srt-text'],
+        ['vd-audio', 'vd-lyrics', 'vd-srt-text']
+    ];
 
     function parseTimeStr(s) {
         if (!s) return -1;
@@ -305,6 +314,14 @@ _LYRICS_JS = r"""
         return -1;
     }
 
+    function getSRT(srtBoxId) {
+        var box = document.getElementById(srtBoxId);
+        if (!box) return '';
+        var ta = box.querySelector('textarea');
+        if (ta) return ta.value;
+        return box.innerText || '';
+    }
+
     function updateLyrics() {
         try {
             PAIRS.forEach(function(pair) {
@@ -315,23 +332,49 @@ _LYRICS_JS = r"""
                 if (!audioContainer || !viewer || !rawBox) return;
 
                 var currentTime = -1;
+
+                // 1. Check for audio element in container
                 var internalAudios = audioContainer.querySelectorAll('audio');
                 if (internalAudios.length === 0 && audioContainer.shadowRoot) {
                     internalAudios = audioContainer.shadowRoot.querySelectorAll('audio');
                 }
-
+                
                 var primaryAudio = internalAudios[0];
-                if (primaryAudio && !primaryAudio.paused) {
-                    currentTime = primaryAudio.currentTime;
-                } else if (primaryAudio && primaryAudio.paused) {
-                    currentTime = -1;
+                if (primaryAudio && primaryAudio.paused) {
+                    currentTime = -1; 
                 } else {
-                    // Fallback to time string scraping
+                    for (var i = 0; i < internalAudios.length; i++) {
+                        if (!internalAudios[i].paused && internalAudios[i].currentTime > 0) {
+                            currentTime = internalAudios[i].currentTime;
+                            break;
+                        }
+                    }
+                    if (currentTime < 0) {
+                        var allAudios = document.querySelectorAll('audio');
+                        for (var j = 0; j < allAudios.length; j++) {
+                            if (!allAudios[j].paused && allAudios[j].currentTime > 0) {
+                                currentTime = allAudios[j].currentTime;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                // 2. UI Scraper Fallback
+                if (currentTime < 0) {
                     var txt = audioContainer.innerText || "";
                     var matches = txt.match(/(\d+:\d+)/g);
                     if (matches) {
-                        var p = parseTimeStr(matches[0]);
-                        if (p > 0.05) currentTime = p;
+                        var p = parseTimeStr(matches[0]); 
+                        if (p > 0.05) {
+                            if (p !== viewer._lastP) { 
+                                viewer._lastP = p; 
+                                viewer._lastT = Date.now(); 
+                            }
+                            if (Date.now() - (viewer._lastT || 0) < 1000) { 
+                                currentTime = p; 
+                            }
+                        }
                     }
                 }
 
@@ -357,9 +400,7 @@ _LYRICS_JS = r"""
                     }
                 }
             });
-        } catch (e) {
-            console.error("Lyrics Engine Error:", e);
-        }
+        } catch(e) { console.warn("Polling Engine Recovered", e); }
     }
 
     setInterval(updateLyrics, 200);
@@ -384,27 +425,19 @@ def optimize_audio_for_web(wav_path):
 # Core Logic
 # ---------------------------------------------------------------------------
 
-def text_to_srt_whisper(text, audio_tuple, pipe, progress=None):
+def text_to_srt_whisper(text, audio_tuple, pipe, language="zh", progress=None):
     """Generate SRT using Whisper word-level timestamps via pipeline."""
     try:
+        if progress: progress(0.1, desc="🔍 Aligning subtitles (Whisper)...")
         sr, waveform = audio_tuple
         # Normalize to float32 for pipeline
         waveform_f32 = waveform.astype(np.float32) / 32767.0
         
-        if progress:
-            progress(0.1, desc="🔍 Analyzing Audio with Whisper...")
-            
         # Whisper pipeline expects a dict or numpy array
         result = pipe({"sampling_rate": sr, "raw": waveform_f32}, return_timestamps="word")
         chunks = result.get("chunks", [])
         
-        if progress:
-            progress(0.4, desc="✂️ Splitting Text Segments...")
-            
         segments = smart_balanced_split(text)
-        
-        if progress:
-            progress(0.6, desc="🧩 Aligning Audio to Text...")
         
         # 1. Global Clock Reconstruction (Fixing the Whisper 30s Wall)
         abs_chunks = []
@@ -487,6 +520,7 @@ def text_to_srt_whisper(text, audio_tuple, pipe, progress=None):
                     e_interp = last_e + (k / rem_len) * (total_end - last_e)
                     mapping[last_idx + k] = (s_interp, e_interp)
                     
+        if progress: progress(0.9, desc="📝 Finalizing SRT formatting...")
         srt_output = ""
         curr = 0
         for i, (seg_text, s_clean) in enumerate(zip(segments, user_clean), 1):
@@ -514,11 +548,8 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
         yield None, "", None, "Text is required."
         return
     
-    progress(0, desc="🚀 Starting OmniWhisper...")
-    
     # 1. Punctuation Unification
     if convert_punc:
-        progress(0.05, desc="📝 Processing Text...")
         text = unify_punctuation(text)
         if ref_text:
             ref_text = unify_punctuation(ref_text)
@@ -548,9 +579,9 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
         
         for curr, total, chunk_wave in gen_iter:
             if chunk_wave is None:
-                # Progress update
-                progress(0.1 + (curr/total) * 0.6, desc=f"⏳ TTS Chunk {curr}/{total}")
-                yield None, "", None, f"⏳ Generation in progress... Synthesizing TTS (Chunk {curr}/{total})"
+                # Heartbeat via Progress bar to prevent Colab disconnection
+                if progress:
+                    progress((curr/total)*0.8, desc=f"⏳ Synthesizing TTS (Chunk {curr}/{total})")
             else:
                 # Final chunk returned
                 full_waveform = chunk_wave
@@ -572,9 +603,8 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
         # 4. SRT Generation
         srt_content = ""
         if gen_srt:
-            # CRITICAL FIX: To prevent the "Triple Reload" bug, we yield the audio path early.
-            # We also ensure the status message is stable to prevent flickering.
-            yield audio_path, "", None, f"⏳ TTS Done ({duration_s:.1f}s). Starting ASR Heartbeat..."
+            # CRITICAL FIX: To prevent the "Triple Reload" bug, yield audio path immediately.
+            yield audio_path, "", None, f"⏳ TTS Done. Running ASR alignment..."
             srt_content = text_to_srt_whisper(text, audio_tuple, WHISPER_PIPE, progress=progress)
         
         # 4. Final Result Preparation
@@ -719,13 +749,14 @@ def build_app(model_path=None, whisper_path=None):
                 print(f"❌ Transcription failed: {e}")
                 return f"Error during transcription: {e}"
 
-        def vc_handler(*args):
+        def vc_handler(*args, progress=gr.Progress()):
             # 0:text, 1:lang, 2:ref_audio, 3:ref_text, 4:instruct, 5:steps, 6:gs, 7:denoise, 8:punc, 9:speed, 10:dur, 11:pp, 12:po, 13:gen_srt
             for res in generate_core(
                 text=args[0], language=args[1], ref_audio=args[2], ref_text=args[3], 
                 instruct=args[4], num_step=args[5], guidance=args[6], denoise=args[7], 
                 convert_punc=args[8], speed=args[9], duration=args[10], 
-                pp=args[11], po=args[12], mode="clone", gen_srt=args[13]
+                pp=args[11], po=args[12], mode="clone", gen_srt=args[13],
+                progress=progress
             ):
                 yield res
             
@@ -781,9 +812,9 @@ def build_app(model_path=None, whisper_path=None):
             outputs=[vc_audio, vc_srt, vc_dl, vc_status]
         ).then(lambda dl: gr.update(visible=bool(dl)), inputs=[vc_dl], outputs=[vc_dl])
 
-        def vd_handler(text, lang, speed, dur, steps, gs, dn, punc, po, gen_srt, *groups):
+        def vd_handler(text, lang, speed, dur, steps, gs, dn, punc, po, gen_srt, *groups, progress=gr.Progress()):
             instruct = ", ".join([g for g in groups if g != "Auto"])
-            for res in generate_core(text, lang, None, None, instruct, steps, gs, dn, speed, dur, False, po, "design", gen_srt, punc):
+            for res in generate_core(text, lang, None, None, instruct, steps, gs, dn, speed, dur, False, po, "design", gen_srt, punc, progress=progress):
                 yield res
 
         vd_btn.click(
