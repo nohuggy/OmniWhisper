@@ -112,7 +112,7 @@ def text_to_srt_whisper(text, audio_tuple, pipe, progress=None):
     except Exception as e: return f"SRT Error: {e}"
 
 def tts_stage(text, language, ref_audio, ref_text, instruct, num_step, guidance, denoise, punc, speed, duration, pp, po, progress=gr.Progress()):
-    if not text or not text.strip(): return None, None, None, "❌ Text is empty"
+    if not text or not text.strip(): return None, None, "❌ Text is empty"
     if progress: progress(0, desc="🚀 Synthesizing Audio...")
     
     if punc: text = unify_punctuation(text)
@@ -140,14 +140,35 @@ def tts_stage(text, language, ref_audio, ref_text, instruct, num_step, guidance,
     sf.write(wav_path, full_waveform, sr)
     audio_path = optimize_audio_for_web(wav_path)
     
-    return audio_path, [text, (sr, full_waveform), unique_slug, slug], f"✅ TTS Done. Starting ASR..."
+    # 🏁 RADICAL FIX: ONLY pass the PATH in the state, NOT the huge raw array.
+    # Passing large arrays in gr.State causes WebSocket overflow and disconnection.
+    state = {
+        "text": text,
+        "wav_path": wav_path,
+        "unique_slug": unique_slug,
+        "slug": slug
+    }
+    
+    return audio_path, state, f"✅ TTS Done. Starting ASR..."
 
 def asr_stage(gen_srt, state, progress=gr.Progress()):
     if not gen_srt or not state: return gr.update(), gr.update(), "✅ Complete"
-    text, audio_tuple, unique_slug, slug = state
+    
+    text = state["text"]
+    wav_path = state["wav_path"]
+    unique_slug = state["unique_slug"]
+    slug = state["slug"]
+    
     if progress: progress(0, desc="🔍 Generating Subtitles...")
     
+    # Load audio from file instead of state
+    import soundfile as sf
+    waveform, sr = sf.read(wav_path)
+    audio_tuple = (sr, waveform)
+    
+    import torch
     torch.cuda.empty_cache()
+    
     srt_content = text_to_srt_whisper(text, audio_tuple, WHISPER_PIPE, progress=progress)
     
     srt_path = f"outputs/{unique_slug}.srt"
@@ -155,7 +176,7 @@ def asr_stage(gen_srt, state, progress=gr.Progress()):
     
     zip_path = f"outputs/{unique_slug}.zip"
     with zipfile.ZipFile(zip_path, 'w') as z:
-        z.write(f"outputs/{unique_slug}.wav", arcname=f"{slug}.wav")
+        z.write(wav_path, arcname=f"{slug}.wav")
         z.write(srt_path, arcname=f"{slug}.srt")
         
     return srt_content, zip_path, "✅ All Done"
