@@ -12,6 +12,7 @@ import warnings
 import time
 import subprocess
 import shutil
+import gc
 
 # Suppress annoying warnings for a cleaner "pro" boot
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -39,6 +40,7 @@ from transformers import pipeline
 # ---------------------------------------------------------------------------
 TTS_ENGINE = None
 WHISPER_PIPE = None
+
 def load_engines(model_path=None, whisper_path=None):
     global TTS_ENGINE, WHISPER_PIPE
     if model_path is None:
@@ -46,10 +48,7 @@ def load_engines(model_path=None, whisper_path=None):
     if whisper_path is None:
         whisper_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "whisper-large-v3-turbo")
 
-    # 1. Handle OmniVoice TTS Model
-    has_tts = os.path.exists(model_path) and any(f.endswith(('.bin', '.safetensors')) for f in os.listdir(model_path))
-    if not has_tts:
-        print(f"📥 Downloading OmniVoice Weights...")
+    if not os.path.exists(model_path) or not any(f.endswith(('.bin', '.safetensors')) for f in os.listdir(model_path)):
         from huggingface_hub import snapshot_download
         snapshot_download(repo_id="k2-fsa/OmniVoice", local_dir=model_path, local_dir_use_symlinks=False)
 
@@ -57,47 +56,37 @@ def load_engines(model_path=None, whisper_path=None):
         device = "cuda" if torch.cuda.is_available() else "cpu"
         TTS_ENGINE = TTSEngine(model_path, device=device, dtype=torch.float16 if device == "cuda" else torch.float32)
     
-    # 2. Handle Whisper Model
     if WHISPER_PIPE is None:
-        has_whisper = os.path.exists(whisper_path) and any(f.endswith(('.bin', '.safetensors', '.pt')) for f in os.listdir(whisper_path))
-        if not has_whisper:
-            print(f"📥 Downloading Whisper Turbo...")
+        if not os.path.exists(whisper_path):
             from huggingface_hub import snapshot_download
             snapshot_download(repo_id='openai/whisper-large-v3-turbo', local_dir=whisper_path, local_dir_use_symlinks=False)
-        
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        # If local loading fails, attempt to load directly from Hub
-        try:
-            WHISPER_PIPE = pipeline("automatic-speech-recognition", model=whisper_path, device=device)
-        except Exception as e:
-            print(f"⚠️ Local Whisper load failed ({e}), trying Hub fallback...")
-            WHISPER_PIPE = pipeline("automatic-speech-recognition", model="openai/whisper-large-v3-turbo", device=device)
+        WHISPER_PIPE = pipeline("automatic-speech-recognition", model=whisper_path, device=device)
         if TTS_ENGINE and hasattr(TTS_ENGINE.model, "_asr_pipe"):
             TTS_ENGINE.model._asr_pipe = WHISPER_PIPE
     return TTS_ENGINE, WHISPER_PIPE
 
 # ---------------------------------------------------------------------------
-# Logic Chaining (Radical Solution for Timeouts)
+# Logic
 # ---------------------------------------------------------------------------
 
 def optimize_audio_for_web(wav_path):
     mp3_path = wav_path.replace(".wav", ".mp3")
     try:
-        subprocess.run(["ffmpeg", "-y", "-i", wav_path, "-codec:a", "libmp3lame", "-q:a", "5", mp3_path], 
+        # Use low-priority nice to avoid kernel freeze
+        subprocess.run(["nice", "-n", "19", "ffmpeg", "-y", "-i", wav_path, "-codec:a", "libmp3lame", "-q:a", "5", mp3_path], 
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return mp3_path if os.path.exists(mp3_path) else wav_path
     except: return wav_path
 
 def text_to_srt_whisper(text, audio_tuple, pipe, progress=None):
     try:
-        if progress: progress(0.2, desc="🔍 Aligning subtitles...")
         sr, waveform = audio_tuple
         waveform_f32 = waveform.astype(np.float32) / 32767.0
         result = pipe({"sampling_rate": sr, "raw": waveform_f32}, return_timestamps="word")
         chunks = result.get("chunks", [])
         segments = smart_balanced_split(text)
         
-        # Simple reconstruction for Colab stability
         abs_chunks = []
         offset = 0.0
         last_e = 0.0
@@ -110,8 +99,6 @@ def text_to_srt_whisper(text, audio_tuple, pipe, progress=None):
             abs_chunks.append(c)
             last_e = e + offset
 
-        if progress: progress(0.7, desc="📝 Formatting SRT...")
-        # (Simplified alignment for speed)
         srt_output = ""
         for i, seg in enumerate(segments, 1):
             s_time = (i-1) * (last_e / len(segments))
@@ -120,75 +107,92 @@ def text_to_srt_whisper(text, audio_tuple, pipe, progress=None):
         return srt_output.strip()
     except Exception as e: return f"SRT Error: {e}"
 
-def tts_stage(text, language, ref_audio, ref_text, instruct, num_step, guidance, denoise, punc, speed, duration, pp, po, progress=gr.Progress()):
-    if not text or not text.strip(): return None, None, "❌ Text is empty"
-    if progress: progress(0, desc="🚀 Synthesizing Audio...")
-    
-    if punc: text = unify_punctuation(text)
-    lang_code = language if language != "Auto" else None
-    
-    gen_iter = TTS_ENGINE.generate(
-        text=text.strip(), ref_audio=ref_audio, ref_text=ref_text, instruct=instruct,
-        language=lang_code, num_step=num_step, guidance_scale=guidance,
-        denoise=denoise, speed=speed, duration=duration, preprocess_prompt=pp, postprocess_output=po
-    )
-    
-    full_waveform = []
-    sr = 16000
-    for curr, total, chunk_wave in gen_iter:
-        if chunk_wave is None:
-            if progress: progress(curr/total, desc=f"⏳ TTS ({curr}/{total})")
-        else:
-            full_waveform = chunk_wave
-            sr = TTS_ENGINE.sampling_rate
-            
-    os.makedirs("outputs", exist_ok=True)
-    slug = get_slug(text)
-    unique_slug = f"{slug}_{int(time.time())}"
-    wav_path = f"outputs/{unique_slug}.wav"
-    sf.write(wav_path, full_waveform, sr)
-    audio_path = optimize_audio_for_web(wav_path)
-    
-    # 🏁 RADICAL FIX: ONLY pass the PATH in the state, NOT the huge raw array.
-    # Passing large arrays in gr.State causes WebSocket overflow and disconnection.
-    state = {
-        "text": text,
-        "wav_path": wav_path,
-        "unique_slug": unique_slug,
-        "slug": slug
-    }
-    
-    return audio_path, state, f"✅ TTS Done. Starting ASR..."
+def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guidance, denoise, speed, duration, pp, po, mode, gen_srt=True, convert_punc=True, progress=gr.Progress()):
+    if not text or not text.strip():
+        yield None, "", None, "Error: Text is empty"
+        return
 
-def asr_stage(gen_srt, state, progress=gr.Progress()):
-    if not gen_srt or not state: return gr.update(), gr.update(), "✅ Complete"
-    
-    text = state["text"]
-    wav_path = state["wav_path"]
-    unique_slug = state["unique_slug"]
-    slug = state["slug"]
-    
-    if progress: progress(0, desc="🔍 Generating Subtitles...")
-    
-    # Load audio from file instead of state
-    import soundfile as sf
-    waveform, sr = sf.read(wav_path)
-    audio_tuple = (sr, waveform)
-    
-    import torch
-    torch.cuda.empty_cache()
-    
-    srt_content = text_to_srt_whisper(text, audio_tuple, WHISPER_PIPE, progress=progress)
-    
-    srt_path = f"outputs/{unique_slug}.srt"
-    with open(srt_path, "w", encoding="utf-8") as f: f.write(srt_content)
-    
-    zip_path = f"outputs/{unique_slug}.zip"
-    with zipfile.ZipFile(zip_path, 'w') as z:
-        z.write(wav_path, arcname=f"{slug}.wav")
-        z.write(srt_path, arcname=f"{slug}.srt")
+    # 1. Immediate Heartbeat
+    yield gr.update(), gr.update(), gr.update(), "🚀 Initializing..."
+    if progress: progress(0, desc="🚀 Starting...")
+
+    if convert_punc:
+        text = unify_punctuation(text)
+        if ref_text: ref_text = unify_punctuation(ref_text)
+            
+    try:
+        # 2. TTS Generation
+        lang_code = language if language != "Auto" else None
+        gen_iter = TTS_ENGINE.generate(
+            text=text.strip(), ref_audio=ref_audio, ref_text=ref_text, instruct=instruct,
+            language=lang_code, num_step=num_step, guidance_scale=guidance,
+            denoise=denoise, speed=speed, duration=duration, preprocess_prompt=pp, postprocess_output=po
+        )
         
-    return srt_content, zip_path, "✅ All Done"
+        full_waveform = []
+        sr = 16000
+        for curr, total, chunk_wave in gen_iter:
+            if chunk_wave is None:
+                if progress: progress(curr/total * 0.7, desc=f"⏳ TTS ({curr}/{total})")
+                # Rare yield to keep connection alive without overloading tunnel
+                if curr % max(1, total // 4) == 0:
+                    yield gr.update(), gr.update(), gr.update(), f"⏳ TTS: {curr}/{total}"
+            else:
+                full_waveform = chunk_wave
+                sr = TTS_ENGINE.sampling_rate
+
+        # 🚀 THE RADICAL FIX: Break the memory spike
+        yield gr.update(), gr.update(), gr.update(), "⏳ TTS Complete. Clearing GPU memory..."
+        gc.collect()
+        torch.cuda.empty_cache()
+        time.sleep(0.5) # Let kernel breathe
+
+        # 3. Save Audio
+        slug = get_slug(text)
+        unique_slug = f"{slug}_{int(time.time())}"
+        os.makedirs("outputs", exist_ok=True)
+        wav_path = f"outputs/{unique_slug}.wav"
+        sf.write(wav_path, full_waveform, sr)
+        audio_path = optimize_audio_for_web(wav_path)
+        
+        # Immediate yield of audio to "success" the UI
+        yield audio_path, gr.update(), gr.update(), "⏳ Audio ready. Starting ASR..."
+
+        # 4. SRT Generation
+        srt_content = ""
+        zip_path = None
+        if gen_srt:
+            if progress: progress(0.8, desc="🔍 Aligning Subtitles...")
+            
+            # Use a tiny loop for ASR heartbeat
+            import threading
+            asr_res = {"val": None, "err": None}
+            def run_asr():
+                try: asr_res["val"] = text_to_srt_whisper(text, (sr, full_waveform), WHISPER_PIPE)
+                except Exception as e: asr_res["err"] = str(e)
+            
+            t = threading.Thread(target=run_asr)
+            t.start()
+            while t.is_alive():
+                yield gr.update(), gr.update(), gr.update(), "⏳ ASR Alignment in progress..."
+                time.sleep(3.0)
+            t.join()
+            
+            srt_content = asr_res["val"] or f"SRT Error: {asr_res['err']}"
+            
+            # Final Package
+            srt_path = f"outputs/{unique_slug}.srt"
+            with open(srt_path, "w", encoding="utf-8") as f: f.write(srt_content)
+            zip_path = f"outputs/{unique_slug}.zip"
+            with zipfile.ZipFile(zip_path, 'w') as z:
+                z.write(wav_path, arcname=f"{slug}.wav")
+                z.write(srt_path, arcname=f"{slug}.srt")
+
+        if progress: progress(1.0, desc="✅ Done")
+        yield audio_path, srt_content, zip_path if zip_path else gr.update(), "✅ Generation Complete"
+        
+    except Exception as e:
+        yield None, "", None, f"❌ Error: {e}"
 
 # ---------------------------------------------------------------------------
 # UI Construction
@@ -207,50 +211,29 @@ _LANG_DISPLAY = ["Auto"] + sorted(lang_display_name(n) for n in LANG_NAMES)
 
 CSS = """
 .gradio-container {max-width: 100% !important; font-size: 16px !important;}
-.output-panel { background: #1f2937; border-radius: 12px; padding: 12px; border: 1px solid #374151; }
-#vc-lyrics, #vd-lyrics { background: #111; color: #fff; border-radius: 12px; height: 260px; overflow-y: auto; display: none; padding: 20px; }
-.lyric-line { text-align: center; padding: 8px; color: #888; font-size: 1.1em; transition: all 0.2s; }
-.lyric-line.active { color: #fff; font-weight: bold; background: rgba(79, 70, 229, 0.3); border-radius: 6px; }
+.output-panel { background-color: #1f2937 !important; border: 1px solid #374151 !important; border-radius: 12px; }
+.custom-label { display: inline-block; background: #4f46e5; color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; margin-bottom: 4px; font-weight: bold; }
+#vc-lyrics, #vd-lyrics { background: #111; color: #fff; border-radius: 12px; height: 260px; overflow-y: auto; display: none; padding: 15px; text-align: center; }
+.lyric-line { padding: 5px; color: #888; transition: all 0.2s; }
+.lyric-line.active { color: #fff; font-weight: bold; background: rgba(79, 70, 229, 0.2); }
 """
 
 _LYRICS_JS = r"""
 () => {
-    function parseTimestamp(s) {
-        if (!s) return 0;
-        var p = s.replace(',','.').split(':');
-        if (p.length === 3) return parseInt(p[0])*3600 + parseInt(p[1])*60 + parseFloat(p[2]);
-        return parseFloat(p[p.length-1]);
-    }
-    function parseSRT(data) {
-        if (!data) return [];
-        var res = [], blocks = data.trim().split(/\n\s*\n/);
-        blocks.forEach(block => {
-            var lines = block.split('\n');
-            if (lines.length >= 3) {
-                var tm = lines[1].match(/(\d+:\d+:\d+,\d+)\s*-->\s*(\d+:\d+:\d+,\d+)/);
-                if (tm) res.push({start: parseTimestamp(tm[1]), end: parseTimestamp(tm[2]), text: lines.slice(2).join(' ')});
-            }
-        });
-        return res;
-    }
-    function update() {
+    setInterval(() => {
         ['vc', 'vd'].forEach(prefix => {
-            var aud = document.getElementById(prefix+'-audio')?.querySelector('audio');
-            var lyr = document.getElementById(prefix+'-lyrics');
-            var srt = document.getElementById(prefix+'-srt-text')?.querySelector('textarea')?.value;
-            if (!aud || !lyr || !srt || aud.paused) { if(lyr) lyr.style.display='none'; return; }
-            lyr.style.display='block';
-            if (lyr._last !== srt) { lyr._cues = parseSRT(srt); lyr._last = srt; lyr.innerHTML = lyr._cues.map((c,i) => `<div class="lyric-line" id="${prefix}-l-${i}">${c.text}</div>`).join(''); }
-            var cur = aud.currentTime, active = -1;
-            lyr._cues.forEach((c,i) => {
-                var el = document.getElementById(`${prefix}-l-${i}`);
-                if (cur >= c.start && cur < c.end) { el.className='lyric-line active'; active=i; }
-                else el.className='lyric-line';
-            });
-            if (active >= 0) { var el = document.getElementById(`${prefix}-l-${active}`); lyr.scrollTo({top: el.offsetTop - 100, behavior: 'smooth'}); }
+            const audio = document.querySelector(`#${prefix}-audio audio`);
+            const srt = document.querySelector(`#${prefix}-srt-text textarea`)?.value;
+            const viewer = document.getElementById(`${prefix}-lyrics`);
+            if (!audio || !srt || audio.paused) {
+                if (viewer) viewer.style.display = 'none';
+                return;
+            }
+            viewer.style.display = 'block';
+            // Simple display for this version
+            viewer.innerHTML = '<div style="color:#aaa;padding:20px;">' + srt.split('\n\n').pop().split('\n').pop() + '</div>';
         });
-    }
-    setInterval(update, 200);
+    }, 500);
 }
 """
 
@@ -258,81 +241,93 @@ def build_app(model_path=None, whisper_path=None):
     load_engines(model_path, whisper_path)
     
     with gr.Blocks(theme=gr.themes.Soft(), css=CSS, title="OmniWhisper") as demo:
-        gr.Markdown("# OmniWhisper Pro")
+        gr.Markdown("# OmniWhisper")
         
         with gr.Tabs():
+            # VC TAB
             with gr.TabItem("Voice Clone"):
                 with gr.Row():
                     with gr.Column():
-                        vc_text = gr.Textbox(label="Text", lines=4)
-                        vc_ref = gr.Audio(label="Reference", type="filepath")
-                        vc_ref_text = gr.Textbox(label="Ref Transcript", lines=2)
+                        vc_text = gr.Textbox(label="Text to Synthesize", lines=5)
+                        vc_ref = gr.Audio(label="Reference Audio", type="filepath")
+                        vc_ref_text = gr.Textbox(label="Reference Text", lines=2)
                         with gr.Row():
-                            vc_trans_btn = gr.Button("Trans Ref")
-                            vc_gen_srt = gr.Checkbox(label="SRT", value=True)
-                        with gr.Accordion("Settings", open=False):
-                            vc_lang = gr.Dropdown(choices=_LANG_DISPLAY, value="Auto", label="Lang")
-                            vc_speed = gr.Slider(0.5, 2.0, value=1.0, label="Speed")
-                            vc_steps = gr.Slider(4, 64, value=32, step=4, label="Steps")
-                            vc_punc = gr.Checkbox(label="Unify Punc", value=True)
-                        vc_btn = gr.Button("Generate", variant="primary")
+                            vc_trans_btn = gr.Button("Trans Ref", variant="secondary")
+                            vc_gen_srt = gr.Checkbox(label="Generate Subtitles (SRT)", value=True)
+                        with gr.Accordion("Advanced Settings", open=False):
+                            vc_instruct = gr.Textbox(label="Voice Instruction")
+                            vc_lang = gr.Dropdown(label="Language", choices=_LANG_DISPLAY, value="Auto")
+                            vc_speed = gr.Slider(0.5, 2.0, value=0.9, step=0.05, label="Speed")
+                            vc_dur = gr.Number(label="Fixed Duration (sec)", value=0)
+                            vc_steps = gr.Slider(4, 64, value=32, step=4, label="Inference Steps")
+                            vc_gs = gr.Slider(0, 5, value=3.0, step=0.1, label="Guidance Scale")
+                            vc_dn = gr.Checkbox(label="Denoise", value=True)
+                            vc_punc = gr.Checkbox(label="Convert Punctuation", value=True)
+                            vc_pp = gr.Checkbox(label="Clean Ref Audio", value=True)
+                            vc_po = gr.Checkbox(label="Trim Output Silence", value=True)
+                        vc_btn = gr.Button("Generate Voice", variant="primary")
                     
                     with gr.Column():
                         vc_audio = gr.Audio(label="Result", type="filepath", elem_id="vc-audio")
                         with gr.Group(elem_classes="output-panel"):
+                            gr.HTML('<label class="custom-label">Subtitle</label>')
                             gr.HTML('<div id="vc-lyrics"></div>')
-                            vc_srt = gr.Textbox(show_label=False, lines=8, elem_id="vc-srt-text")
-                        vc_dl = gr.DownloadButton("Download ZIP", visible=False)
-                        vc_status = gr.Textbox(label="Status")
-                        vc_state = gr.State()
+                            vc_srt = gr.Textbox(show_label=False, lines=10, elem_id="vc-srt-text", interactive=False)
+                        vc_dl = gr.DownloadButton("📥 Download ZIP", visible=False)
+                        vc_status = gr.Textbox(label="Status", interactive=False)
 
+            # VD TAB
             with gr.TabItem("Voice Design"):
                 with gr.Row():
                     with gr.Column():
-                        vd_text = gr.Textbox(label="Text", lines=4)
-                        vd_gen_srt = gr.Checkbox(label="SRT", value=True)
-                        vd_btn = gr.Button("Create", variant="primary")
+                        vd_text = gr.Textbox(label="Text to Synthesize", lines=5)
+                        vd_groups = []
+                        with gr.Row():
+                            for cat, choices in list(_CATEGORIES.items())[:2]:
+                                vd_groups.append(gr.Dropdown(label=cat, choices=["Auto"] + choices, value="Auto"))
+                        with gr.Row():
+                            for cat, choices in list(_CATEGORIES.items())[2:4]:
+                                vd_groups.append(gr.Dropdown(label=cat, choices=["Auto"] + choices, value="Auto"))
+                        with gr.Row():
+                            for cat, choices in list(_CATEGORIES.items())[4:]:
+                                vd_groups.append(gr.Dropdown(label=cat, choices=["Auto"] + choices, value="Auto"))
+                        with gr.Accordion("Advanced Settings", open=False):
+                            vd_lang = gr.Dropdown(label="Language", choices=_LANG_DISPLAY, value="Auto")
+                            vd_speed = gr.Slider(0.5, 2.0, value=0.9, step=0.05, label="Speed")
+                            vd_dur = gr.Number(label="Fixed Duration (sec)", value=0)
+                            vd_steps = gr.Slider(4, 64, value=32, step=4, label="Inference Steps")
+                            vd_gs = gr.Slider(0, 5, value=3.0, step=0.1, label="Guidance Scale")
+                            vd_dn = gr.Checkbox(label="Denoise", value=True)
+                            vd_punc = gr.Checkbox(label="Convert Punctuation", value=True)
+                            vd_po = gr.Checkbox(label="Trim Output Silence", value=True)
+                            vd_gen_srt = gr.Checkbox(label="Generate Subtitles (SRT)", value=True)
+                        vd_btn = gr.Button("Create Voice", variant="primary")
+                    
                     with gr.Column():
                         vd_audio = gr.Audio(label="Result", type="filepath", elem_id="vd-audio")
                         with gr.Group(elem_classes="output-panel"):
+                            gr.HTML('<label class="custom-label">Subtitle</label>')
                             gr.HTML('<div id="vd-lyrics"></div>')
-                            vd_srt = gr.Textbox(show_label=False, lines=8, elem_id="vd-srt-text")
-                        vd_dl = gr.DownloadButton("Download ZIP", visible=False)
-                        vd_status = gr.Textbox(label="Status")
-                        vd_state = gr.State()
+                            vd_srt = gr.Textbox(show_label=False, lines=10, elem_id="vd-srt-text", interactive=False)
+                        vd_dl = gr.DownloadButton("📥 Download ZIP", visible=False)
+                        vd_status = gr.Textbox(label="Status", interactive=False)
 
-        # Logic Chaining
-        vc_btn.click(
-            tts_stage,
-            inputs=[vc_text, vc_lang, vc_ref, vc_ref_text, gr.State(""), vc_steps, gr.State(3.0), gr.State(True), vc_punc, vc_speed, gr.State(0), gr.State(True), gr.State(True)],
-            outputs=[vc_audio, vc_state, vc_status]
-        ).then(
-            asr_stage,
-            inputs=[vc_gen_srt, vc_state],
-            outputs=[vc_srt, vc_dl, vc_status]
-        ).then(lambda dl: gr.update(visible=bool(dl)), inputs=[vc_dl], outputs=[vc_dl])
+        # Unified Handler
+        def handler(text, lang, ref, ref_text, instruct, steps, gs, dn, punc, speed, dur, pp, po, gen_srt, progress=gr.Progress()):
+            for res in generate_core(text, lang, ref, ref_text, instruct, steps, gs, dn, speed, dur, pp, po, "clone", gen_srt, punc, progress):
+                yield res
 
-        vd_btn.click(
-            tts_stage,
-            inputs=[vd_text, gr.State("Auto"), gr.State(None), gr.State(None), gr.State("Male"), gr.State(32), gr.State(3.0), gr.State(True), gr.State(True), gr.State(1.0), gr.State(0), gr.State(False), gr.State(True)],
-            outputs=[vd_audio, vd_state, vd_status]
-        ).then(
-            asr_stage,
-            inputs=[vd_gen_srt, vd_state],
-            outputs=[vd_srt, vd_dl, vd_status]
-        ).then(lambda dl: gr.update(visible=bool(dl)), inputs=[vd_dl], outputs=[vd_dl])
-
+        vc_btn.click(handler, inputs=[vc_text, vc_lang, vc_ref, vc_ref_text, vc_instruct, vc_steps, vc_gs, vc_dn, vc_punc, vc_speed, vc_dur, vc_pp, vc_po, vc_gen_srt], outputs=[vc_audio, vc_srt, vc_dl, vc_status])
+        vd_btn.click(handler, inputs=[vd_text, vd_lang, gr.State(None), gr.State(None), gr.State("Male"), vd_steps, vd_gs, vd_dn, vd_punc, vd_speed, vd_dur, gr.State(False), vd_po, vd_gen_srt], outputs=[vd_audio, vd_srt, vd_dl, vd_status])
         vc_trans_btn.click(lambda a: TTS_ENGINE.transcribe(a), inputs=[vc_ref], outputs=[vc_ref_text])
+        
+        vc_dl.then(lambda dl: gr.update(visible=bool(dl)), inputs=[vc_dl], outputs=[vc_dl])
+        vd_dl.then(lambda dl: gr.update(visible=bool(dl)), inputs=[vd_dl], outputs=[vd_dl])
+        
         demo.load(None, None, None, js=_LYRICS_JS)
         
     return demo
 
 if __name__ == "__main__":
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--share", action="store_true")
-    parser.add_argument("--model", type=str, default=None)
-    parser.add_argument("--whisper", type=str, default=None)
-    args = parser.parse_args()
-    app = build_app(model_path=args.model, whisper_path=args.whisper)
-    app.queue().launch(server_name="0.0.0.0", server_port=7860, share=args.share)
+    app = build_app()
+    app.queue().launch(server_name="0.0.0.0", server_port=7860, share=True)
