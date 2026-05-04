@@ -735,13 +735,15 @@ def build_app(model_path=None, whisper_path=None):
                         vd_status = gr.Textbox(label="Status", interactive=False, lines=3)
 
         # Event Handlers
-        def transcribe_ref(audio):
+        def transcribe_ref(audio, progress=gr.Progress()):
             if not audio: return ""
             try:
+                if progress: progress(0.5, desc="🎙️ Transcribing reference audio...")
                 print(f"🎙️ Transcribing reference audio: {audio}")
                 # Use the engine's transcribe method (loads via soundfile + uses model internal)
                 text = TTS_ENGINE.transcribe(audio)
                 print(f"📝 Result: {text}")
+                if progress: progress(1.0, desc="✅ Transcription complete")
                 return text
             except Exception as e:
                 import traceback
