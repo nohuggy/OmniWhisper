@@ -323,92 +323,94 @@ _LYRICS_JS = r"""
     }
 
     function updateLyrics() {
-        PAIRS.forEach(function(pair) {
-            var audioId = pair[0], lyricsId = pair[1], srtBoxId = pair[2];
-            var audioContainer = document.getElementById(audioId);
-            var viewer = document.getElementById(lyricsId);
-            var rawBox = document.getElementById(srtBoxId);
-            if (!audioContainer || !viewer || !rawBox) return;
+        try {
+            PAIRS.forEach(function(pair) {
+                var audioId = pair[0], lyricsId = pair[1], srtBoxId = pair[2];
+                var audioContainer = document.getElementById(audioId);
+                var viewer = document.getElementById(lyricsId);
+                var rawBox = document.getElementById(srtBoxId);
+                if (!audioContainer || !viewer || !rawBox) return;
 
-            var currentTime = -1;
+                var currentTime = -1;
 
-            // 1. Check for audio element in container (including shadow DOM)
-            var internalAudios = audioContainer.querySelectorAll('audio');
-            if (internalAudios.length === 0 && audioContainer.shadowRoot) {
-                internalAudios = audioContainer.shadowRoot.querySelectorAll('audio');
-            }
-            // Step 0: Robust Pause detection for standard players
-            var primaryAudio = internalAudios[0];
-            if (primaryAudio && primaryAudio.paused) {
-                currentTime = -1; // Force hide
-            } else {
-                for (var i = 0; i < internalAudios.length; i++) {
-                    if (!internalAudios[i].paused && internalAudios[i].currentTime > 0) {
-                        currentTime = internalAudios[i].currentTime;
-                        break;
-                    }
+                // 1. Check for audio element in container (including shadow DOM)
+                var internalAudios = audioContainer.querySelectorAll('audio');
+                if (internalAudios.length === 0 && audioContainer.shadowRoot) {
+                    internalAudios = audioContainer.shadowRoot.querySelectorAll('audio');
                 }
-
-                // 2. Global fallback (Any playing audio on page)
-                if (currentTime < 0) {
-                    var allAudios = document.querySelectorAll('audio');
-                    for (var j = 0; j < allAudios.length; j++) {
-                        if (!allAudios[j].paused && allAudios[j].currentTime > 0) {
-                            currentTime = allAudios[j].currentTime;
+                // Step 0: Robust Pause detection for standard players
+                var primaryAudio = internalAudios[0];
+                if (primaryAudio && primaryAudio.paused) {
+                    currentTime = -1; // Force hide
+                } else {
+                    for (var i = 0; i < internalAudios.length; i++) {
+                        if (!internalAudios[i].paused && internalAudios[i].currentTime > 0) {
+                            currentTime = internalAudios[i].currentTime;
                             break;
                         }
                     }
-                }
-            }
 
-            // 3. UI Scraper (Gradio 5 Waveform) - Only active if moving
-            if (currentTime < 0) {
-                var txt = audioContainer.innerText || "";
-                var matches = txt.match(/(\d+:\d+)/g);
-                if (matches) {
-                    // Prefer the first match which is usually the current time
-                    var p = parseTimeStr(matches[0]); 
-                    if (p > 0.05) {
-                        if (p !== viewer._lastP) { 
-                            viewer._lastP = p; 
-                            viewer._lastT = Date.now(); 
-                        }
-                        // Only active if the time has changed in the last 1000ms
-                        if (Date.now() - (viewer._lastT || 0) < 1000) { 
-                            currentTime = p; 
+                    // 2. Global fallback (Any playing audio on page)
+                    if (currentTime < 0) {
+                        var allAudios = document.querySelectorAll('audio');
+                        for (var j = 0; j < allAudios.length; j++) {
+                            if (!allAudios[j].paused && allAudios[j].currentTime > 0) {
+                                currentTime = allAudios[j].currentTime;
+                                break;
+                            }
                         }
                     }
                 }
-            }
 
-            if (currentTime >= 0) {
-                var srtVal = getSRT(srtBoxId);
-                if (viewer.style.display === 'none' || viewer._lastSRT !== srtVal) {
-                    rawBox.style.display = 'none';
-                    viewer.style.display = 'block';
-                    viewer._cues = parseSRT(srtVal);
-                    viewer._lastSRT = srtVal;
-                    viewer._cueCount = -1;
+                // 3. UI Scraper (Gradio 5 Waveform) - Only active if moving
+                if (currentTime < 0) {
+                    var txt = audioContainer.innerText || "";
+                    var matches = txt.match(/(\d+:\d+)/g);
+                    if (matches) {
+                        // Prefer the first match which is usually the current time
+                        var p = parseTimeStr(matches[0]); 
+                        if (p > 0.05) {
+                            if (p !== viewer._lastP) { 
+                                viewer._lastP = p; 
+                                viewer._lastT = Date.now(); 
+                            }
+                            // Only active if the time has changed in the last 1000ms
+                            if (Date.now() - (viewer._lastT || 0) < 1000) { 
+                                currentTime = p; 
+                            }
+                        }
+                    }
                 }
-                var cues = viewer._cues || [];
-                var activeIdx = -1;
-                for (var k = 0; k < cues.length; k++) {
-                    if (currentTime >= cues[k].start && currentTime < cues[k].end) { activeIdx = k; break; }
+
+                if (currentTime >= 0) {
+                    var srtVal = getSRT(srtBoxId);
+                    if (viewer.style.display === 'none' || viewer._lastSRT !== srtVal) {
+                        rawBox.style.display = 'none';
+                        viewer.style.display = 'block';
+                        viewer._cues = parseSRT(srtVal);
+                        viewer._lastSRT = srtVal;
+                        viewer._cueCount = -1;
+                    }
+                    var cues = viewer._cues || [];
+                    var activeIdx = -1;
+                    for (var k = 0; k < cues.length; k++) {
+                        if (currentTime >= cues[k].start && currentTime < cues[k].end) { activeIdx = k; break; }
+                    }
+                    renderLyrics(viewer, cues, activeIdx);
+                } else {
+                    if (viewer.style.display !== 'none') {
+                        viewer.style.display = 'none';
+                        rawBox.style.display = 'block';
+                    }
                 }
-                renderLyrics(viewer, cues, activeIdx);
-            } else {
-                if (viewer.style.display !== 'none') {
-                    viewer.style.display = 'none';
-                    rawBox.style.display = 'block';
+                
+                // 4. Audio Engine Optimization: Force browser to buffer more aggressively
+                var audios = audioContainer.querySelectorAll('audio');
+                for (var i = 0; i < audios.length; i++) {
+                    if (audios[i].preload !== 'auto') audios[i].preload = 'auto';
                 }
-            }
-            
-            // 4. Audio Engine Optimization: Force browser to buffer more aggressively
-            var audios = audioContainer.querySelectorAll('audio');
-            for (var i = 0; i < audios.length; i++) {
-                if (audios[i].preload !== 'auto') audios[i].preload = 'auto';
-            }
-        });
+            });
+        } catch(e) { console.error('[Lyrics] Engine Error:', e); }
     }
 
     setInterval(updateLyrics, 200);
@@ -548,7 +550,7 @@ def text_to_srt_whisper(text, audio_tuple, pipe, language="zh"):
     except Exception as e:
         return f"SRT Error: {e}"
 
-def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guidance, denoise, speed, duration, pp, po, mode, gen_srt=True, convert_punc=True):
+def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guidance, denoise, speed, duration, pp, po, mode, gen_srt=True, convert_punc=True, progress=gr.Progress()):
     """
     Central orchestration loop for OmniVoice synthesis.
     Flow: 
@@ -558,6 +560,7 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
     4. SRT & ZIP generation.
     5. Final synchronized yield of all result components.
     """
+    progress(0, desc="Initializing...")
     if not text or not text.strip():
         yield None, "", None, "Text is required."
         return
@@ -592,6 +595,7 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
         )
         
         for curr, total, chunk_wave in gen_iter:
+            progress(curr/total if total > 0 else 0, desc=f"TTS Chunk {curr}/{total}")
             if chunk_wave is None:
                 # Progress update
                 yield None, "", None, f"⏳ Generation in progress... Synthesizing TTS (Chunk {curr}/{total})"
@@ -616,15 +620,12 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
         # 4. SRT Generation
         srt_content = ""
         if gen_srt:
+            progress(0.9, desc="ASR Aligning...")
             # Clear VRAM after TTS to make room for Whisper
             torch.cuda.empty_cache()
             
             # Yield early to keep the connection alive (Heartbeat)
             yield audio_path, "", None, f"⏳ TTS Done ({duration_s:.1f}s). Preparing ASR alignment..."
-            
-            # Split Whisper into two yields if text is long
-            if len(text) > 500:
-                yield audio_path, "", None, f"⏳ Processing long text ({len(text)} chars). Running Whisper..."
             
             srt_content = text_to_srt_whisper(text, audio_tuple, WHISPER_PIPE)
             
@@ -634,6 +635,7 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
             if not srt_content or "SRT Error" in srt_content:
                 yield audio_path, "", None, f"⚠️ SRT generation failed: {srt_content}"
             else:
+                progress(0.95, desc="Packaging...")
                 yield audio_path, srt_content, None, f"⏳ SRT Generated. Finalizing package..."
         
         # 4. Final Result Preparation
@@ -784,7 +786,8 @@ def build_app(model_path=None, whisper_path=None):
                 text=args[0], language=args[1], ref_audio=args[2], ref_text=args[3], 
                 instruct=args[4], num_step=args[5], guidance=args[6], denoise=args[7], 
                 convert_punc=args[8], speed=args[9], duration=args[10], 
-                pp=args[11], po=args[12], mode="clone", gen_srt=args[13]
+                pp=args[11], po=args[12], mode="clone", gen_srt=args[13],
+                progress=gr.Progress()
             ):
                 yield res
             
@@ -842,7 +845,10 @@ def build_app(model_path=None, whisper_path=None):
 
         def vd_handler(text, lang, speed, dur, steps, gs, dn, punc, po, gen_srt, *groups):
             instruct = ", ".join([g for g in groups if g != "Auto"])
-            for res in generate_core(text, lang, None, None, instruct, steps, gs, dn, speed, dur, False, po, "design", gen_srt, punc):
+            for res in generate_core(
+                text, lang, None, None, instruct, steps, gs, dn, speed, dur, False, po, "design", gen_srt, punc,
+                progress=gr.Progress()
+            ):
                 yield res
 
         vd_btn.click(
