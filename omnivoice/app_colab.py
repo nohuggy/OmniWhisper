@@ -31,6 +31,8 @@ for var in ["HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE"]:
 # ## 1. THE DEBUG JOURNEY (KEY MILESTONES)
 # - VRAM STABILITY: "Broken Connection" was proven to be a CUDA OOM crash, 
 #   not a timeout. Solved via "Radical Unloading" and batch_size=1.
+# - UI STABILITY (PLAYER REFRESH): Player used to restart from 0:00 every 
+#   10-20s during ASR. Fixed by explicitly yielding audio_path in heartbeats.
 # - UI STABILITY (MINUTE JUMP): Highlights used to jump back 60s at minute 
 #   boundaries (e.g. 4:00 -> 3:00). Fixed via JS Hysteresis filter.
 # - UI STABILITY (MODE FLICKER): UI used to flash back to raw text for 0.5s 
