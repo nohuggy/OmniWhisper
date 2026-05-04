@@ -719,10 +719,10 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
                     # Slow crawl from 0.8 to 0.95 during ASR
                     progress(0.8 + (dot_count * 0.03), desc=f"🔍 Aligning{dots}")
                 
-                elapsed = int(time.time() - start_time)
                 # HEARTBEAT: Constant yield to keep Colab/Gradio connection active
                 # Faster heartbeat (0.8s) for long-form stability
-                yield gr.update(), gr.update(), gr.update(), f"⏳ ASR Alignment in progress ({elapsed}s)... {dots}"
+                # 🚀 CRITICAL: We yield audio_path explicitly to keep the player from refreshing
+                yield audio_path, gr.update(), gr.update(), f"⏳ ASR Alignment in progress ({elapsed}s)... {dots}"
                 time.sleep(0.8)
             
             thread.join()
@@ -736,7 +736,8 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
         zip_path = None
         if gen_srt and srt_content and not srt_content.startswith("SRT Error"):
             elapsed = int(time.time() - start_time)
-            yield gr.update(), gr.update(), gr.update(), f"📦 Packaging results ({elapsed}s)..."
+            # 🚀 CRITICAL: We yield audio_path explicitly to keep the player from refreshing
+            yield audio_path, gr.update(), gr.update(), f"📦 Packaging results ({elapsed}s)..."
             
             srt_path = f"outputs/{unique_slug}.srt"
             with open(srt_path, "w", encoding="utf-8") as f:
