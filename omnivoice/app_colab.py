@@ -28,25 +28,27 @@ for var in ["HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE"]:
 # ---------------------------------------------------------------------------
 # This edition solves the "Broken Connection" issue specific to Google Colab.
 # 
-# ## 1. THE DEBUG JOURNEY (KEY MOMENTS)
-# - SYMPTOM A: "Broken Connection" error after 10-20s of ASR.
-# - INITIAL ASSUMPTION: WebUI Timeout. Fixed with "Active Heartbeat" (Live Timer).
-# - SYMPTOM B: Disconnection continued despite the timer. 
-# - KEY DISCOVERY: Applied real-time VRAM tracking which revealed the TRUE cause:
+# ## 1. THE DEBUG JOURNEY (THE "BROKEN CONNECTION" MYTH)
+# - SYMPTOM: "Broken Connection" error during ASR alignment.
+# - MISCONCEPTION: Initially assumed to be a WebUI timeout (fixed with heartbeats).
+# - TRUTH: "Broken Connection" was actually a direct symptom of CUDA OOM. When the 
+#   GPU hits the 15GB limit, the Python process freezes/crashes, dropping the 
+#   WebSocket connection instantly.
+# - THE PROOF: Real-time VRAM tracking captured the "Smoking Gun":
 #   "SRT Error: CUDA out of memory. Tried to allocate 602.00 MiB. GPU 0 has a 
 #   total capacity of 14.56 GiB of which 357.81 MiB is free."
 # 
 # ## 2. WHY LIGHTNING.AI WORKS BUT COLAB FAILED
-# - SYSTEM OVERHEAD: Colab runs a Jupyter backend that reserves ~800MB of VRAM 
-#   for the UI/Bridge. Lightning.ai "headless" apps have 0MB overhead.
-# - MARGIN OF ERROR: That 800MB is the exact margin that causes Whisper Large V3 
-#   to OOM on Colab when OmniVoice is also in memory.
+# - SYSTEM OVERHEAD: Colab's Jupyter backend reserves ~800MB of VRAM for its UI 
+#   bridge. Lightning.ai "headless" environments have 0MB system overhead.
+# - MARGIN OF ERROR: That 800MB is the critical margin. Without it, Whisper Large 
+#   V3 cannot perform "Word" alignment if OmniVoice is also in memory.
 # 
-# ## 3. THE BALANCED SOLUTION (DO NOT ALTER)
-# - RADICAL UNLOADING: Deletes TTS from GPU before ASR starts (Exclusive 15GB).
-# - VRAM GUARDRAILS: batch_size=1 and chunk_length_s=30 are REQUIRED.
-# - PRECISION GUARDRAIL: return_timestamps="word" is REQUIRED for accurate 
-#   alignment. It only stays within VRAM because batch_size is 1.
+# ## 3. THE ACTUAL FIX (DO NOT ALTER)
+# - RADICAL UNLOADING: Models MUST be deleted from GPU to provide 15GB free space.
+# - VRAM GUARDRAILS: batch_size=1 and chunk_length_s=30 are MANDATORY.
+# - PRECISION: return_timestamps="word" is required for accuracy, but ONLY 
+#   safe when combined with the VRAM guardrails above.
 # ---------------------------------------------------------------------------
 
 # Add project root to path
