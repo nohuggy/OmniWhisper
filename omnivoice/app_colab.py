@@ -30,26 +30,32 @@ for var in ["HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE"]:
 # 
 # ## 1. THE DEBUG JOURNEY (THE "BROKEN CONNECTION" MYTH)
 # - SYMPTOM: "Broken Connection" error during ASR alignment.
-# - MISCONCEPTION: Initially assumed to be a WebUI timeout (fixed with heartbeats).
+# - MISCONCEPTION: Initially assumed to be a WebUI timeout.
 # - TRUTH: "Broken Connection" was actually a direct symptom of CUDA OOM. When the 
-#   GPU hits the 15GB limit, the Python process freezes/crashes, dropping the 
-#   WebSocket connection instantly.
-# - THE PROOF: Real-time VRAM tracking captured the "Smoking Gun":
-#   "SRT Error: CUDA out of memory. Tried to allocate 602.00 MiB. GPU 0 has a 
-#   total capacity of 14.56 GiB of which 357.81 MiB is free."
+#   GPU hits the 15GB limit, the process crashes, dropping the WebSocket instantly.
+# - THE PROOF: VRAM tracking captured: "SRT Error: CUDA out of memory. Tried to 
+#   allocate 602.00 MiB. GPU 0 has a total capacity of 14.56 GiB..."
 # 
 # ## 2. WHY LIGHTNING.AI WORKS BUT COLAB FAILED
 # - SYSTEM OVERHEAD: Colab's Jupyter backend reserves ~800MB of VRAM for its UI 
-#   bridge. Lightning.ai (when used with VSCode) is significantly more 
-#   lightweight and has near-zero system VRAM overhead.
-# - MARGIN OF ERROR: That 800MB is the critical margin. Without it, Whisper Large 
-#   V3 cannot perform "Word" alignment if OmniVoice is also in memory.
+#   bridge. Lightning.ai (with VSCode) has near-zero system VRAM overhead.
+# - MARGIN OF ERROR: That 800MB is the critical margin required for Whisper 
+#   Large V3 "Word" alignment to run while OmniVoice is in memory.
 # 
 # ## 3. THE ACTUAL FIX (DO NOT ALTER)
 # - RADICAL UNLOADING: Models MUST be deleted from GPU to provide 15GB free space.
 # - VRAM GUARDRAILS: batch_size=1 and chunk_length_s=30 are MANDATORY.
 # - PRECISION: return_timestamps="word" is required for accuracy, but ONLY 
 #   safe when combined with the VRAM guardrails above.
+# 
+# ## 4. GENERAL TECHNICAL MAINTENANCE NOTES (FROM LIGHTNING AI)
+# - ORCHESTRATION: generate_core() must follow: Text -> TTS -> MP3 -> ASR Align.
+# - UI STABILITY: To prevent the Gradio 5 "Triple Reload" player glitch, 
+#   generate_core MUST keep the audio_path consistent (pointing to MP3) 
+#   across all yields. Switching paths (MP3->WAV) triggers reloads.
+# - DOM IDs: The lyric viewer relies on IDs: 'vc-audio', 'vd-audio', etc.
+# - LYRIC SCRAPER: JS uses a "Motion-Aware" scraper that only trusts timestamps 
+#   if they are changing and checks primaryAudio.paused to prevent hanging.
 # ---------------------------------------------------------------------------
 
 # Add project root to path
