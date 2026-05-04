@@ -819,12 +819,9 @@ def build_app(model_path=None, whisper_path=None):
             outputs=[vc_audio, vc_srt, vc_dl, vc_status]
         ).then(lambda dl: gr.update(visible=bool(dl)), inputs=[vc_dl], outputs=[vc_dl])
 
-        def vd_handler(text, lang, speed, dur, steps, gs, dn, punc, po, gen_srt, *groups):
-            # We must capture progress from the closure or explicit arg
-            # In Gradio, handlers with *args or *groups often struggle with Progress.
-            # We'll use a fixed number of dropdowns instead if needed, but let's try this:
-            progress = gr.Progress()
-            instruct = ", ".join([g for g in groups if g != "Auto"])
+
+        def vd_handler(text, lang, speed, dur, steps, gs, dn, punc, po, gen_srt, g1, g2, g3, g4, g5, g6, progress=gr.Progress()):
+            instruct = ", ".join([g for g in [g1, g2, g3, g4, g5, g6] if g != "Auto"])
             for res in generate_core(text, lang, None, None, instruct, steps, gs, dn, speed, dur, False, po, "design", gen_srt, punc, progress=progress):
                 yield res
 
