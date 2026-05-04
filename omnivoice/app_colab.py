@@ -586,7 +586,7 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
                     except: pass
                 # 2. Update Status Text (ONLY every 10% to prevent UI Panel Flicker)
                 if curr % max(1, total // 10) == 0 or curr == total:
-                    yield gr.no_update, gr.no_update, gr.no_update, f"⏳ TTS Generation: Chunk {curr}/{total}"
+                    yield gr.update(), gr.update(), gr.update(), f"⏳ TTS Generation: Chunk {curr}/{total}"
             else:
                 # Final chunk returned
                 full_waveform = chunk_wave
@@ -610,7 +610,7 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
         if gen_srt:
             # Re-yield the MP3 immediately after TTS to unfreeze player
             # We use the real audio_path here so the user can start listening
-            yield audio_path, gr.no_update, gr.no_update, "⏳ TTS Done. Starting ASR alignment (Whisper)..."
+            yield audio_path, gr.update(), gr.update(), "⏳ TTS Done. Starting ASR alignment (Whisper)..."
             
             # 🚀 ROBUST HEARTBEAT: Run ASR in a thread and yield every 1.0s to keep connection alive
             import threading
@@ -636,7 +636,7 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
                 
                 # Constant yield to keep Colab connection alive (Heartbeat)
                 # We use gr.no_update for audio/srt/dl to prevent flicker
-                yield gr.no_update, gr.no_update, gr.no_update, f"⏳ ASR Alignment in progress{dots}"
+                yield gr.update(), gr.update(), gr.update(), f"⏳ ASR Alignment in progress{dots}"
                 time.sleep(1.0)
             
             thread.join()
@@ -644,11 +644,11 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
                 srt_content = f"SRT Error: {asr_res['error']}"
             else:
                 srt_content = asr_res["content"]
-                yield gr.no_update, srt_content, gr.no_update, "⏳ ASR Alignment Complete. Packaging ZIP..."
+                yield gr.update(), srt_content, gr.update(), "⏳ ASR Alignment Complete. Packaging ZIP..."
         
         zip_path = None
         if gen_srt and srt_content and not srt_content.startswith("SRT Error"):
-            yield gr.no_update, gr.no_update, gr.no_update, "📦 Packaging project files..."
+            yield gr.update(), gr.update(), gr.update(), "📦 Packaging project files..."
             
             srt_path = f"outputs/{unique_slug}.srt"
             with open(srt_path, "w", encoding="utf-8") as f:
@@ -666,7 +666,7 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
         # FINAL YIELD: Maintain the SAME audio_path (MP3) to avoid the final UI reload glitch.
         # Gradio 5 reloads the component if the source path changes. 
         # By keeping it as the MP3, the user's preview remains uninterrupted.
-        yield audio_path, srt_content, zip_path, status_msg
+        yield audio_path, srt_content, zip_path if zip_path else gr.update(), status_msg
         
     except Exception as e:
         import traceback
