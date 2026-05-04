@@ -518,6 +518,9 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
                 full_waveform = chunk_wave
                 sr = TTS_ENGINE.sampling_rate
         
+        audio_tuple = (sr, full_waveform)
+        duration_s = len(full_waveform) / sr
+        
         # 3. Save Audio Immediately to show player early
         slug = get_slug(text)
         unique_slug = f"{slug}_{int(time.time())}"
@@ -534,9 +537,7 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
             yield audio_path, srt_content, None, f"⏳ ASR Done. Finalizing files..."
         
         # 4. Final Result Preparation
-        slug = get_slug(text)
-        # Use unique timestamp to prevent Gradio 0-min cache issues
-        unique_slug = f"{slug}_{int(time.time())}"
+        zip_path = None
         
         # Use Gradio's temp directory if possible, or outputs/
         os.makedirs("outputs", exist_ok=True)
