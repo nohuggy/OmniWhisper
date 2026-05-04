@@ -37,7 +37,8 @@ def smart_balanced_split(text):
         # Pre-process: standardize spaces but keep punctuation
         p_text = re.sub(r'\s+', ' ', p_text).strip()
         # Pattern captures: (leading punctuation) + (word) + (trailing punctuation) + (trailing spaces)
-        pattern = re.compile(r'([^\w\s\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]*)([\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]|[a-zA-Z0-9-]+)([^\w\s\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]*)(\s*)')
+        # Group 3 (trail) excludes opening marks to ensure they lead the NEXT token
+        pattern = re.compile(r'([^\w\s\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]*)([\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]|[a-zA-Z0-9-]+)([^\w\s\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af\(\[\{\u300c\u300e\u300a\u3008\u201c\u2018\uFF08]*)(\s*)')
         tokens = []
         for match in pattern.finditer(p_text):
             lead_punct, word, trail_punct, space = match.groups()

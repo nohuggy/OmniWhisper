@@ -10,7 +10,8 @@ import soundfile as sf
 import gradio as gr
 import warnings
 import time
-
+import subprocess
+import shutil
 # Suppress annoying warnings for a cleaner "pro" boot
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -332,12 +333,32 @@ _LYRICS_JS = """
                     rawBox.style.display = 'block';
                 }
             }
+            
+            // 4. Audio Engine Optimization: Force browser to buffer more aggressively
+            var audios = audioContainer.querySelectorAll('audio');
+            for (var i = 0; i < audios.length; i++) {
+                if (audios[i].preload !== 'auto') audios[i].preload = 'auto';
+            }
         });
     }
 
     setInterval(updateLyrics, 200);
 }
 """
+
+def optimize_audio_for_web(wav_path):
+    """Convert WAV to a lightweight MP3 for fast web loading."""
+    mp3_path = wav_path.replace(".wav", ".mp3")
+    try:
+        # -q:a 5 is approx 128kbps variable bitrate, balanced for speech
+        import subprocess
+        subprocess.run(["ffmpeg", "-y", "-i", wav_path, "-codec:a", "libmp3lame", "-q:a", "5", mp3_path], 
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if os.path.exists(mp3_path):
+            return mp3_path
+    except Exception as e:
+        print(f"Error optimizing audio: {e}")
+    return wav_path
 
 # ---------------------------------------------------------------------------
 # Core Logic
@@ -509,8 +530,11 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
         slug = get_slug(text)
         unique_slug = f"{slug}_{int(time.time())}"
         os.makedirs("outputs", exist_ok=True)
-        audio_path = f"outputs/{unique_slug}.wav"
-        sf.write(audio_path, full_waveform, sr)
+        wav_path = f"outputs/{unique_slug}.wav"
+        sf.write(wav_path, full_waveform, sr)
+        
+        # Optimize for web (mp3 is much smaller and loads faster in Gradio)
+        audio_path = optimize_audio_for_web(wav_path)
         
         # 4. SRT Generation
         srt_content = ""
@@ -523,10 +547,8 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
         # 4. Final Result Preparation
         zip_path = None
         
-        # Use Gradio's temp directory if possible, or outputs/
-        os.makedirs("outputs", exist_ok=True)
-        audio_path = f"outputs/{unique_slug}.wav"
-        sf.write(audio_path, full_waveform, sr)
+        # Use the master WAV for the final result
+        audio_path = wav_path
         
         zip_path = None
         if srt_content:
