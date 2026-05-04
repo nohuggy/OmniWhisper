@@ -165,7 +165,7 @@ CSS = """
     border: none !important;
     box-shadow: none !important;
 }
-.output-panel { gap: 0 !important; overflow: hidden !important; }
+.output-panel { gap: 0 !important; overflow: hidden !important; border: 1px solid #374151 !important; border-radius: 12px; }
 
 .custom-label {
     display: inline-flex; align-items: center; gap: 6px;
@@ -207,6 +207,7 @@ _SUBTITLE_CSS = """
     overflow-y: auto !important; 
     font-family: 'Courier New', Courier, monospace;
     font-size: 0.9em;
+    background: transparent !important;
 }
 .lyric-line {
     text-align: center;
@@ -579,10 +580,11 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
         
         for curr, total, chunk_wave in gen_iter:
             if chunk_wave is None:
-                # Heartbeat via Progress bar to prevent Colab disconnection
-                if progress:
-                    progress((curr/total)*0.8, desc=f"⏳ TTS ({curr}/{total})")
-                # Verbose status for UI feedback
+                # Heartbeat via Progress bar
+                if progress is not None:
+                    try: progress(curr/total, desc=f"⏳ TTS ({curr}/{total})")
+                    except: pass
+                # Constant yield to keep connection alive
                 yield None, "", None, f"⏳ TTS Generation: Chunk {curr}/{total}"
             else:
                 # Final chunk returned
@@ -782,9 +784,9 @@ def build_app(model_path=None, whisper_path=None):
 
         def vc_handler(
             text, lang, ref, ref_text, instruct, steps, gs, dn, punc, speed, dur, pp, po, gen_srt,
-            progress=gr.Progress()
+            progress: gr.Progress = gr.Progress()
         ):
-            # Gradio automatically injects the progress object if it's a parameter
+            if progress: progress(0, desc="🚀 Initializing...")
             for res in generate_core(
                 text=text, language=lang, ref_audio=ref, ref_text=ref_text, 
                 instruct=instruct, num_step=steps, guidance=gs, denoise=dn, 
@@ -847,8 +849,12 @@ def build_app(model_path=None, whisper_path=None):
         ).then(lambda dl: gr.update(visible=bool(dl)), inputs=[vc_dl], outputs=[vc_dl])
 
 
-        def vd_handler(text, lang, speed, dur, steps, gs, dn, punc, po, gen_srt, *groups, progress=gr.Progress()):
-            instruct = ", ".join([g for g in groups if g != "Auto"])
+        def vd_handler(
+            text, lang, speed, dur, steps, gs, dn, punc, po, gen_srt, g1, g2, g3, g4, g5, g6,
+            progress: gr.Progress = gr.Progress()
+        ):
+            if progress: progress(0, desc="🚀 Designing Voice...")
+            instruct = ", ".join([g for g in [g1, g2, g3, g4, g5, g6] if g != "Auto"])
             for res in generate_core(text, lang, None, None, instruct, steps, gs, dn, speed, dur, False, po, "design", gen_srt, punc, progress=progress):
                 yield res
 
