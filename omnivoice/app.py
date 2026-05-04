@@ -309,7 +309,7 @@ _LYRICS_JS = """
             // 3. UI Scraper (Gradio 5 Waveform) - Only active if moving
             if (currentTime < 0) {
                 var txt = audioContainer.innerText || "";
-                var matches = txt.match(/(\d+:\d+)/g);
+                var matches = txt.match(/(\\d+:\\d+)/g);
                 if (matches) {
                     // Prefer the first match which is usually the current time
                     var p = parseTimeStr(matches[0]); 
