@@ -279,37 +279,49 @@ _LYRICS_JS = """
             if (internalAudios.length === 0 && audioContainer.shadowRoot) {
                 internalAudios = audioContainer.shadowRoot.querySelectorAll('audio');
             }
-            for (var i = 0; i < internalAudios.length; i++) {
-                if (!internalAudios[i].paused && internalAudios[i].currentTime > 0) {
-                    currentTime = internalAudios[i].currentTime;
-                    break;
-                }
-            }
-
-            // 2. Global fallback (Any playing audio on page)
-            if (currentTime < 0) {
-                var allAudios = document.querySelectorAll('audio');
-                for (var j = 0; j < allAudios.length; j++) {
-                    if (!allAudios[j].paused && allAudios[j].currentTime > 0) {
-                        currentTime = allAudios[j].currentTime;
+            // Step 0: Robust Pause detection for standard players
+            var primaryAudio = internalAudios[0];
+            if (primaryAudio && primaryAudio.paused) {
+                currentTime = -1; // Force hide
+            } else {
+                for (var i = 0; i < internalAudios.length; i++) {
+                    if (!internalAudios[i].paused && internalAudios[i].currentTime > 0) {
+                        currentTime = internalAudios[i].currentTime;
                         break;
                     }
                 }
-            }
-            // 3. UI Scraper (Gradio 5 Waveform) - Smarter detection
-            if (currentTime < 0) {
-                var txt = audioContainer.innerText || "";
-                var matches = txt.match(/(\d+:\d+)/g);
-                if (matches && matches.length >= 1) {
-                    // Current time is usually the first match. Total duration is the last.
-                    var p = parseTimeStr(matches[0]);
-                    if (p > 0) {
-                        if (p !== viewer._lastP) { viewer._lastP = p; viewer._lastT = Date.now(); }
-                        if (Date.now() - (viewer._lastT || 0) < 800) { currentTime = p; }
-                    } else if (p === 0 && matches.length > 1) { viewer._lastT = 0; }
+
+                // 2. Global fallback (Any playing audio on page)
+                if (currentTime < 0) {
+                    var allAudios = document.querySelectorAll('audio');
+                    for (var j = 0; j < allAudios.length; j++) {
+                        if (!allAudios[j].paused && allAudios[j].currentTime > 0) {
+                            currentTime = allAudios[j].currentTime;
+                            break;
+                        }
+                    }
                 }
             }
 
+            // 3. UI Scraper (Gradio 5 Waveform) - Only active if moving
+            if (currentTime < 0) {
+                var txt = audioContainer.innerText || "";
+                var matches = txt.match(/(\d+:\d+)/g);
+                if (matches) {
+                    // Prefer the first match which is usually the current time
+                    var p = parseTimeStr(matches[0]); 
+                    if (p > 0.05) {
+                        if (p !== viewer._lastP) { 
+                            viewer._lastP = p; 
+                            viewer._lastT = Date.now(); 
+                        }
+                        // Only active if the time has changed in the last 1000ms
+                        if (Date.now() - (viewer._lastT || 0) < 1000) { 
+                            currentTime = p; 
+                        }
+                    }
+                }
+            }
 
             if (currentTime >= 0) {
                 var srtVal = getSRT(srtBoxId);
@@ -540,36 +552,22 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
         if gen_srt:
             yield audio_path, "", None, f"⏳ TTS Done ({duration_s:.1f}s). Running ASR for alignment..."
             srt_content = text_to_srt_whisper(text, audio_tuple, WHISPER_PIPE)
-            # Show Subtitles immediately
-            yield audio_path, srt_content, None, f"⏳ ASR Done. Finalizing files..."
         
         # 4. Final Result Preparation
-        zip_path = None
-        
-        # Keep audio_path as the optimized MP3 to avoid UI player reloads
-        # The WAV is already saved as wav_path and will be used for the ZIP.
-        pass
-        
+        # Keep audio_path as the MP3 for the UI yield to prevent reloads,
+        # but the ZIP will contain the high-quality WAV.
         zip_path = None
         if srt_content:
-            srt_path = audio_path.replace(".wav", ".srt")
+            srt_path = f"outputs/{unique_slug}.srt"
             with open(srt_path, "w", encoding="utf-8") as f:
                 f.write(srt_content)
             
-            zip_path = audio_path.replace(".wav", ".zip")
-            with zipfile.ZipFile(zip_path, "w") as zipf:
-                zipf.write(audio_path, arcname=f"{slug}.wav")
-                zipf.write(srt_path, arcname=f"{slug}.srt")
-            # Final yield with everything
-            yield audio_path, srt_content, zip_path, f"⏳ Files ready. Finishing..."
-        else:
-            zip_path = audio_path
-
-        elapsed = time.time() - start_time
-        tokens = len(text.strip())
-        status_msg = f"✅ Done in {elapsed:.1f}s | {duration_s:.1f}s Audio | {tokens} Chars"
+            zip_path = f"outputs/{unique_slug}.zip"
+            with zipfile.ZipFile(zip_path, 'w') as z:
+                z.write(wav_path, arcname=f"{slug}.wav")
+                z.write(srt_path, arcname=f"{slug}.srt")
         
-        # Final yield shows Audio Player
+        # FINAL YIELD: Ensure audio_path is still the MP3 to avoid the 3rd reload
         yield audio_path, srt_content, zip_path, status_msg
         
     except Exception as e:
