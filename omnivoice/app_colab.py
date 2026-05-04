@@ -65,17 +65,30 @@ def load_engines(model_path=None, whisper_path=None):
         whisper_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "whisper-large-v3-turbo")
 
     # 1. Handle OmniVoice TTS Model
-    if "HF_HUB_OFFLINE" in os.environ:
-        del os.environ["HF_HUB_OFFLINE"]
+    def disable_offline():
+        for var in ["HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE"]:
+            if var in os.environ:
+                print(f"🔓 Disabling {var} for download...")
+                del os.environ[var]
 
-    if not os.path.exists(model_path) or not any(f.endswith(('.bin', '.safetensors')) for f in os.listdir(model_path) if os.path.isfile(os.path.join(model_path, f))):
+    # Check for weights. We need either .bin or .safetensors and it must NOT be an empty directory
+    has_weights = False
+    if os.path.exists(model_path):
+        files = os.listdir(model_path)
+        if any(f.endswith(('.bin', '.safetensors')) for f in files):
+            has_weights = True
+
+    if not has_weights:
+        disable_offline()
+
+    if not has_weights:
         print(f"📥 Downloading OmniVoice Weights to {model_path}...")
         from huggingface_hub import snapshot_download
         try:
             snapshot_download(repo_id="k2-fsa/OmniVoice", local_dir=model_path, local_dir_use_symlinks=False, local_files_only=False)
             print("✅ OmniVoice Weights: Ready")
-        except Exception:
-            print("⚠️ Switching to Git fallback for OmniVoice...")
+        except Exception as e:
+            print(f"⚠️ Snapshot download failed: {e}. Trying Git fallback...")
             os.system(f"git clone https://huggingface.co/k2-fsa/OmniVoice {model_path}_tmp && mv {model_path}_tmp/* {model_path}/ && rm -rf {model_path}_tmp")
             print("✅ OmniVoice Weights: Ready (Fallback)")
 
@@ -87,6 +100,10 @@ def load_engines(model_path=None, whisper_path=None):
     
     # 2. Handle Whisper Model
     if WHISPER_PIPE is None:
+        has_whisper = os.path.exists(whisper_path) and any(f.endswith(('.bin', '.safetensors', '.pt')) for f in os.listdir(whisper_path) if os.path.isfile(os.path.join(whisper_path, f)))
+        if not has_whisper:
+            disable_offline()
+            
         if not os.path.exists(whisper_path) or not any(f.endswith(('.bin', '.safetensors', '.pt')) for f in os.listdir(whisper_path) if os.path.isfile(os.path.join(whisper_path, f))):
             print(f"📥 Downloading Whisper Turbo to {whisper_path}...")
             from huggingface_hub import snapshot_download
