@@ -281,6 +281,8 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--share", action="store_true")
+    parser.add_argument("--model", type=str, default=None)
+    parser.add_argument("--whisper", type=str, default=None)
     args = parser.parse_args()
-    app = build_app()
+    app = build_app(model_path=args.model, whisper_path=args.whisper)
     app.queue().launch(server_name="0.0.0.0", server_port=7860, share=args.share)
