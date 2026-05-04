@@ -296,16 +296,16 @@ _LYRICS_JS = """
                 }
             }
 
-            // 3. UI Scraper (Gradio 5 Waveform)
+            // 3. UI Scraper (Gradio 5 Waveform) - Only active if moving
             if (currentTime < 0) {
                 var txt = audioContainer.innerText || "";
-                var matches = txt.match(/(\\d+:\\d+)/g);
+                var matches = txt.match(/(\d+:\d+)/g);
                 if (matches) {
                     for (var m = 0; m < matches.length; m++) {
                         var p = parseTimeStr(matches[m]);
-                        if (p >= 0) {
+                        if (p > 0.05) {
                             if (p !== viewer._lastP) { viewer._lastP = p; viewer._lastT = Date.now(); }
-                            if (Date.now() - (viewer._lastT || 0) < 1500) { currentTime = p; break; }
+                            if (Date.now() - (viewer._lastT || 0) < 1000) { currentTime = p; break; }
                         }
                     }
                 }
