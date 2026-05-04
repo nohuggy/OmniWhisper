@@ -62,6 +62,18 @@ def get_tts_engine(model_path=None):
     if TTS_ENGINE is None:
         if model_path is None:
             model_path = os.path.join(os.path.dirname(__file__), "resources")
+            
+        # Ensure model directory exists and has weights
+        has_weights = os.path.exists(model_path) and any(f.endswith(('.bin', '.safetensors')) for f in os.listdir(model_path))
+        if not has_weights:
+            print(f"📥 Downloading OmniVoice Weights (~1.5GB) to ephemeral storage...")
+            from huggingface_hub import snapshot_download
+            try:
+                snapshot_download(repo_id="k2-fsa/OmniVoice", local_dir=model_path, local_dir_use_symlinks=False)
+            except Exception as e:
+                print(f"⚠️ Download failed: {e}. Trying git fallback...")
+                os.system(f"git clone https://huggingface.co/k2-fsa/OmniVoice {model_path}_tmp && mv {model_path}_tmp/* {model_path}/ && rm -rf {model_path}_tmp")
+
         device = "cuda" if torch.cuda.is_available() else "cpu"
         dtype = torch.float32 if device == "cpu" else torch.float16
         TTS_ENGINE = TTSEngine(model_path, device=device, dtype=dtype)
@@ -72,6 +84,18 @@ def get_whisper_pipe(whisper_path=None):
     if WHISPER_PIPE is None:
         if whisper_path is None:
             whisper_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "whisper-large-v3-turbo")
+            
+        # Ensure whisper directory exists and has weights
+        has_whisper = os.path.exists(whisper_path) and any(f.endswith(('.bin', '.safetensors', '.pt')) for f in os.listdir(whisper_path) if os.path.isfile(os.path.join(whisper_path, f)))
+        if not has_whisper:
+            print(f"📥 Downloading Whisper Turbo (~1.6GB) to ephemeral storage...")
+            from huggingface_hub import snapshot_download
+            try:
+                snapshot_download(repo_id='openai/whisper-large-v3-turbo', local_dir=whisper_path, local_dir_use_symlinks=False)
+            except Exception as e:
+                print(f"⚠️ Download failed: {e}. Trying git fallback...")
+                os.system(f"git clone https://huggingface.co/openai/whisper-large-v3-turbo {whisper_path}_tmp && mv {whisper_path}_tmp/* {whisper_path}/ && rm -rf {whisper_path}_tmp")
+
         device = "cuda" if torch.cuda.is_available() else "cpu"
         from transformers import pipeline
         WHISPER_PIPE = pipeline("automatic-speech-recognition", model=whisper_path, device=device)
