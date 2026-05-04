@@ -372,7 +372,7 @@ _LYRICS_JS = r"""
                                 viewer._lastP = p; 
                                 viewer._lastT = Date.now(); 
                             }
-                            if (Date.now() - (viewer._lastT || 0) < 1000) { 
+                            if (Date.now() - (viewer._lastT || 0) < 3000) { 
                                 currentTime = p; 
                             }
                         }
@@ -618,6 +618,10 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
         duration_s = len(full_waveform) / sr
         
         if gen_srt:
+            # 🚀 Stability: Clear CUDA cache before heavy ASR task to prevent OOM/Reset
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            
             # 3. SRT Generation (🚀 RADICAL HEARTBEAT)
             # Run Whisper in a thread so we can keep yielding heartbeats to the browser
             import threading
@@ -640,8 +644,9 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
                     progress(0.8 + (dot_count * 0.03), desc=f"🔍 Aligning{dots}")
                 
                 # HEARTBEAT: Constant yield to keep Colab/Gradio connection active
+                # Faster heartbeat (0.8s) for long-form stability
                 yield gr.update(), gr.update(), gr.update(), f"⏳ ASR Alignment in progress{dots}"
-                time.sleep(1.0)
+                time.sleep(0.8)
             
             thread.join()
             if asr_res["error"]:
