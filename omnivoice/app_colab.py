@@ -39,7 +39,6 @@ from transformers import pipeline
 # ---------------------------------------------------------------------------
 TTS_ENGINE = None
 WHISPER_PIPE = None
-
 def load_engines(model_path=None, whisper_path=None):
     global TTS_ENGINE, WHISPER_PIPE
     if model_path is None:
@@ -47,7 +46,9 @@ def load_engines(model_path=None, whisper_path=None):
     if whisper_path is None:
         whisper_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "whisper-large-v3-turbo")
 
-    if not os.path.exists(model_path) or not any(f.endswith(('.bin', '.safetensors')) for f in os.listdir(model_path)):
+    # 1. Handle OmniVoice TTS Model
+    has_tts = os.path.exists(model_path) and any(f.endswith(('.bin', '.safetensors')) for f in os.listdir(model_path))
+    if not has_tts:
         print(f"📥 Downloading OmniVoice Weights...")
         from huggingface_hub import snapshot_download
         snapshot_download(repo_id="k2-fsa/OmniVoice", local_dir=model_path, local_dir_use_symlinks=False)
@@ -56,13 +57,21 @@ def load_engines(model_path=None, whisper_path=None):
         device = "cuda" if torch.cuda.is_available() else "cpu"
         TTS_ENGINE = TTSEngine(model_path, device=device, dtype=torch.float16 if device == "cuda" else torch.float32)
     
+    # 2. Handle Whisper Model
     if WHISPER_PIPE is None:
-        if not os.path.exists(whisper_path):
+        has_whisper = os.path.exists(whisper_path) and any(f.endswith(('.bin', '.safetensors', '.pt')) for f in os.listdir(whisper_path))
+        if not has_whisper:
             print(f"📥 Downloading Whisper Turbo...")
             from huggingface_hub import snapshot_download
             snapshot_download(repo_id='openai/whisper-large-v3-turbo', local_dir=whisper_path, local_dir_use_symlinks=False)
+        
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        WHISPER_PIPE = pipeline("automatic-speech-recognition", model=whisper_path, device=device)
+        # If local loading fails, attempt to load directly from Hub
+        try:
+            WHISPER_PIPE = pipeline("automatic-speech-recognition", model=whisper_path, device=device)
+        except Exception as e:
+            print(f"⚠️ Local Whisper load failed ({e}), trying Hub fallback...")
+            WHISPER_PIPE = pipeline("automatic-speech-recognition", model="openai/whisper-large-v3-turbo", device=device)
         if TTS_ENGINE and hasattr(TTS_ENGINE.model, "_asr_pipe"):
             TTS_ENGINE.model._asr_pipe = WHISPER_PIPE
     return TTS_ENGINE, WHISPER_PIPE
