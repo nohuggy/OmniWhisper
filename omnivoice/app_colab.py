@@ -128,7 +128,14 @@ def load_engines(model_path=None, whisper_path=None):
                 print("✅ Whisper Turbo: Ready (Fallback)")
             
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        WHISPER_PIPE = pipeline("automatic-speech-recognition", model=whisper_path, device=device)
+        WHISPER_PIPE = pipeline(
+            "automatic-speech-recognition", 
+            model=whisper_path, 
+            device=device,
+            torch_dtype=torch.float16 if device == "cuda" else torch.float32,
+            chunk_length_s=30,
+            batch_size=8
+        )
         print(f"✅ Engines Initialized on {device.upper()}")
         
         # Share the same pipe with the TTS engine to save ~1.6GB VRAM/RAM
@@ -415,7 +422,15 @@ def text_to_srt_whisper(text, audio_tuple, pipe, language="zh"):
         waveform_f32 = waveform.astype(np.float32) / 32767.0
         
         # Whisper pipeline expects a dict or numpy array
-        result = pipe({"sampling_rate": sr, "raw": waveform_f32}, return_timestamps="word")
+        print(f"[SRT] Whisper: Pre-computing features on {pipe.device}...")
+        print(f"[SRT] Whisper: Running pipeline inference (Audio: {len(waveform_f32)/sr:.2f}s)...")
+        
+        result = pipe(
+            {"sampling_rate": sr, "raw": waveform_f32}, 
+            return_timestamps="word",
+            generate_kwargs={"language": language if language != "Auto" else None}
+        )
+        print("[SRT] Whisper: Inference complete. Reconstructing SRT...")
         chunks = result.get("chunks", [])
         
         segments = smart_balanced_split(text)
