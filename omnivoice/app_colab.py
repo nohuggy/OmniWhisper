@@ -580,12 +580,13 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
         
         for curr, total, chunk_wave in gen_iter:
             if chunk_wave is None:
-                # Heartbeat via Progress bar
+                # 1. Update Top Progress Bar (Frequent updates here are SMOOTH and don't flicker)
                 if progress is not None:
-                    try: progress(curr/total, desc=f"⏳ TTS ({curr}/{total})")
+                    try: progress(curr/total * 0.8, desc=f"⏳ TTS ({curr}/{total})")
                     except: pass
-                # Constant yield to keep connection alive
-                yield None, "", None, f"⏳ TTS Generation: Chunk {curr}/{total}"
+                # 2. Update Status Text (ONLY every 10% to prevent UI Panel Flicker)
+                if curr % max(1, total // 10) == 0 or curr == total:
+                    yield None, "", None, f"⏳ TTS Generation: Chunk {curr}/{total}"
             else:
                 # Final chunk returned
                 full_waveform = chunk_wave
@@ -626,9 +627,16 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
             while thread.is_alive():
                 dot_count = (dot_count + 1) % 4
                 dots = "." * dot_count
+                
+                # Update top bar to keep it visible and moving slowly
+                if progress:
+                    # Move from 0.8 to 0.95 slowly during ASR
+                    progress(0.8 + (dot_count * 0.03), desc="⏳ ASR Alignment in progress...")
+                
                 # Constant yield to keep Colab connection alive (Heartbeat)
+                # We yield to the status box less frequently to prevent flickering
                 yield audio_path, "", None, f"⏳ ASR Alignment in progress{dots}"
-                time.sleep(0.5)
+                time.sleep(1.0) # 1s is enough for heartbeat
             
             thread.join()
             if asr_res["error"]:
