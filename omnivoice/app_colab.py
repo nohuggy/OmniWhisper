@@ -128,14 +128,7 @@ def load_engines(model_path=None, whisper_path=None):
                 print("✅ Whisper Turbo: Ready (Fallback)")
             
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        WHISPER_PIPE = pipeline(
-            "automatic-speech-recognition", 
-            model=whisper_path, 
-            device=device,
-            torch_dtype=torch.float16 if device == "cuda" else torch.float32,
-            chunk_length_s=30,
-            batch_size=1 # Reduce batch size to save memory on T4
-        )
+        WHISPER_PIPE = pipeline("automatic-speech-recognition", model=whisper_path, device=device)
         print(f"✅ Engines Initialized on {device.upper()}")
         
         # Share the same pipe with the TTS engine to save ~1.6GB VRAM/RAM
@@ -167,17 +160,20 @@ CSS = """
 
 /* Restore the output-panel aesthetics */
 .output-panel, 
-.output-panel * {
-    background-color: #1f2937 !important;
-    border: none !important;
-    box-shadow: none !important;
+.output-panel {
+    background: rgba(0, 0, 0, 0.05) !important;
+    border-radius: 12px !important;
+    padding: 15px !important;
+    border: 1px solid rgba(0, 0, 0, 0.1) !important;
+    min-height: 200px;
+    display: flex;
+    flex-direction: column;
 }
-.output-panel { 
-    gap: 0 !important; 
-    overflow: auto !important; 
-    max-height: 400px;
-    border: 1px solid #374151 !important;
-    border-radius: 8px !important;
+
+#vc-srt-text textarea, #vd-srt-text textarea {
+    overflow-y: auto !important;
+    font-family: 'Courier New', Courier, monospace !important;
+    line-height: 1.4 !important;
 }
 
 .custom-label {
@@ -226,12 +222,6 @@ button.primary, button.secondary {
 .lyric-line.past {
     color: rgba(255, 255, 255, 0.7) !important;
 }
-/* Ensure the SRT Textbox is always scrollable even when not interactive */
-#vc-srt-text textarea, #vd-srt-text textarea {
-    overflow-y: auto !important;
-    cursor: text !important;
-}
-
 .hidden-lyrics { display: none !important; }
 """
 
@@ -241,24 +231,22 @@ _LYRICS_JS = r"""
     
     function parseSRT(raw) {
         if (!raw) return [];
-        // Support both \n and \r\n and multiple spaces
-        var blocks = raw.trim().split(/\n\s*\n/);
+        // Handle various line endings and extra spaces
+        var blocks = raw.trim().split(/\r?\n\r?\n/);
         var cues = [];
         for (var b = 0; b < blocks.length; b++) {
-            var lines = blocks[b].split('\n').map(l => l.trim());
+            var lines = blocks[b].trim().split(/\r?\n/);
             if (lines.length < 3) continue;
-            // Find the time line (usually the second line)
-            var timeLine = "";
-            for(var l=0; l<lines.length; l++) { if(lines[l].includes(' --> ')) { timeLine = lines[l]; break; } }
-            if(!timeLine) continue;
-            var times = timeLine.split(' --> ');
+            var times = lines[1].split(' --> ');
             if (times.length !== 2) continue;
             var s = times[0].replace(',','.').split(':');
             var e = times[1].replace(',','.').split(':');
-            var startSec = parseFloat(s[0])*3600 + parseFloat(s[1])*60 + parseFloat(s[2]);
-            var endSec   = parseFloat(e[0])*3600 + parseFloat(e[1])*60 + parseFloat(e[2]);
-            var txt = lines.slice(lines.indexOf(timeLine)+1).join(' ');
-            cues.push({start: startSec, end: endSec, text: txt});
+            try {
+                var startSec = parseFloat(s[0])*3600 + parseFloat(s[1])*60 + parseFloat(s[2]);
+                var endSec   = parseFloat(e[0])*3600 + parseFloat(e[1])*60 + parseFloat(e[2]);
+                var txt = lines.slice(2).join(' ');
+                cues.push({start: startSec, end: endSec, text: txt});
+            } catch(err) {}
         }
         return cues;
     }
@@ -296,10 +284,15 @@ _LYRICS_JS = r"""
         }
     }
 
-    var PAIRS = [
-        ['vc-audio', 'vc-lyrics', 'vc-srt-text'],
-        ['vd-audio', 'vd-lyrics', 'vd-srt-text']
-    ];
+    function getSRT(srtBoxId) {
+        var box = document.getElementById(srtBoxId);
+        if (!box) return '';
+        var ta = box.querySelector('textarea');
+        if (ta) return ta.value;
+        return box.innerText || '';
+    }
+
+    var PAIRS = [['vc-audio', 'vc-lyrics', 'vc-srt-text'], ['vd-audio', 'vd-lyrics', 'vd-srt-text']];
 
     function parseTimeStr(s) {
         if (!s) return -1;
@@ -312,16 +305,6 @@ _LYRICS_JS = r"""
         return -1;
     }
 
-    function getSRT(srtBoxId) {
-        var box = document.getElementById(srtBoxId);
-        if (!box) return '';
-        var ta = box.querySelector('textarea');
-        if (ta) return ta.value;
-        var p = box.querySelector('p'); // Fallback for some Gradio versions
-        if (p) return p.innerText;
-        return box.innerText || '';
-    }
-
     function updateLyrics() {
         try {
             PAIRS.forEach(function(pair) {
@@ -332,53 +315,23 @@ _LYRICS_JS = r"""
                 if (!audioContainer || !viewer || !rawBox) return;
 
                 var currentTime = -1;
-
-                // 1. Check for audio element in container (including shadow DOM)
                 var internalAudios = audioContainer.querySelectorAll('audio');
                 if (internalAudios.length === 0 && audioContainer.shadowRoot) {
                     internalAudios = audioContainer.shadowRoot.querySelectorAll('audio');
                 }
-                // Step 0: Robust Pause detection for standard players
+
                 var primaryAudio = internalAudios[0];
-                if (primaryAudio && primaryAudio.paused) {
-                    currentTime = -1; // Force hide
+                if (primaryAudio && !primaryAudio.paused) {
+                    currentTime = primaryAudio.currentTime;
+                } else if (primaryAudio && primaryAudio.paused) {
+                    currentTime = -1;
                 } else {
-                    for (var i = 0; i < internalAudios.length; i++) {
-                        if (!internalAudios[i].paused && internalAudios[i].currentTime > 0) {
-                            currentTime = internalAudios[i].currentTime;
-                            break;
-                        }
-                    }
-
-                    // 2. Global fallback (Any playing audio on page)
-                    if (currentTime < 0) {
-                        var allAudios = document.querySelectorAll('audio');
-                        for (var j = 0; j < allAudios.length; j++) {
-                            if (!allAudios[j].paused && allAudios[j].currentTime > 0) {
-                                currentTime = allAudios[j].currentTime;
-                                break;
-                            }
-                        }
-                    }
-                }
-
-                // 3. UI Scraper (Gradio 5 Waveform) - Only active if moving
-                if (currentTime < 0) {
+                    // Fallback to time string scraping
                     var txt = audioContainer.innerText || "";
                     var matches = txt.match(/(\d+:\d+)/g);
                     if (matches) {
-                        // Prefer the first match which is usually the current time
-                        var p = parseTimeStr(matches[0]); 
-                        if (p > 0.05) {
-                            if (p !== viewer._lastP) { 
-                                viewer._lastP = p; 
-                                viewer._lastT = Date.now(); 
-                            }
-                            // Only active if the time has changed in the last 1000ms
-                            if (Date.now() - (viewer._lastT || 0) < 1000) { 
-                                currentTime = p; 
-                            }
-                        }
+                        var p = parseTimeStr(matches[0]);
+                        if (p > 0.05) currentTime = p;
                     }
                 }
 
@@ -403,14 +356,10 @@ _LYRICS_JS = r"""
                         rawBox.style.display = 'block';
                     }
                 }
-                
-                // 4. Audio Engine Optimization: Force browser to buffer more aggressively
-                var audios = audioContainer.querySelectorAll('audio');
-                for (var i = 0; i < audios.length; i++) {
-                    if (audios[i].preload !== 'auto') audios[i].preload = 'auto';
-                }
             });
-        } catch(e) { console.error('[Lyrics] Engine Error:', e); }
+        } catch (e) {
+            console.error("Lyrics Engine Error:", e);
+        }
     }
 
     setInterval(updateLyrics, 200);
@@ -435,26 +384,27 @@ def optimize_audio_for_web(wav_path):
 # Core Logic
 # ---------------------------------------------------------------------------
 
-def text_to_srt_whisper(text, audio_tuple, pipe, language="zh"):
+def text_to_srt_whisper(text, audio_tuple, pipe, progress=None):
     """Generate SRT using Whisper word-level timestamps via pipeline."""
     try:
         sr, waveform = audio_tuple
         # Normalize to float32 for pipeline
         waveform_f32 = waveform.astype(np.float32) / 32767.0
         
+        if progress:
+            progress(0.1, desc="🔍 Analyzing Audio with Whisper...")
+            
         # Whisper pipeline expects a dict or numpy array
-        print(f"[SRT] Whisper: Pre-computing features on {pipe.device}...")
-        print(f"[SRT] Whisper: Running pipeline inference (Audio: {len(waveform_f32)/sr:.2f}s)...")
-        
-        result = pipe(
-            {"sampling_rate": sr, "raw": waveform_f32}, 
-            return_timestamps="word",
-            generate_kwargs={"language": language if language != "Auto" else None}
-        )
-        print("[SRT] Whisper: Inference complete. Reconstructing SRT...")
+        result = pipe({"sampling_rate": sr, "raw": waveform_f32}, return_timestamps="word")
         chunks = result.get("chunks", [])
         
+        if progress:
+            progress(0.4, desc="✂️ Splitting Text Segments...")
+            
         segments = smart_balanced_split(text)
+        
+        if progress:
+            progress(0.6, desc="🧩 Aligning Audio to Text...")
         
         # 1. Global Clock Reconstruction (Fixing the Whisper 30s Wall)
         abs_chunks = []
@@ -560,13 +510,15 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
     4. SRT & ZIP generation.
     5. Final synchronized yield of all result components.
     """
-    progress(0, desc="Initializing...")
     if not text or not text.strip():
         yield None, "", None, "Text is required."
         return
     
+    progress(0, desc="🚀 Starting OmniWhisper...")
+    
     # 1. Punctuation Unification
     if convert_punc:
+        progress(0.05, desc="📝 Processing Text...")
         text = unify_punctuation(text)
         if ref_text:
             ref_text = unify_punctuation(ref_text)
@@ -595,10 +547,10 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
         )
         
         for curr, total, chunk_wave in gen_iter:
-            progress(curr/total if total > 0 else 0, desc=f"TTS Chunk {curr}/{total}")
             if chunk_wave is None:
                 # Progress update
-                yield gr.update(), gr.update(), gr.update(), f"⏳ Generation in progress... Synthesizing TTS (Chunk {curr}/{total})"
+                progress(0.1 + (curr/total) * 0.6, desc=f"⏳ TTS Chunk {curr}/{total}")
+                yield None, "", None, f"⏳ Generation in progress... Synthesizing TTS (Chunk {curr}/{total})"
             else:
                 # Final chunk returned
                 full_waveform = chunk_wave
@@ -620,23 +572,10 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
         # 4. SRT Generation
         srt_content = ""
         if gen_srt:
-            progress(0.9, desc="ASR Aligning...")
-            # Clear VRAM after TTS to make room for Whisper
-            torch.cuda.empty_cache()
-            
-            # Yield early to keep the connection alive (Heartbeat)
-            yield audio_path, gr.update(), gr.update(), f"⏳ TTS Done ({duration_s:.1f}s). Preparing ASR alignment..."
-            
-            srt_content = text_to_srt_whisper(text, audio_tuple, WHISPER_PIPE)
-            
-            # Clear again after SRT
-            torch.cuda.empty_cache()
-            
-            if not srt_content or "SRT Error" in srt_content:
-                yield audio_path, gr.update(), gr.update(), f"⚠️ SRT generation failed: {srt_content}"
-            else:
-                progress(0.95, desc="Packaging...")
-                yield audio_path, srt_content, gr.update(), f"⏳ SRT Generated. Finalizing package..."
+            # CRITICAL FIX: To prevent the "Triple Reload" bug, we yield the audio path early.
+            # We also ensure the status message is stable to prevent flickering.
+            yield audio_path, "", None, f"⏳ TTS Done ({duration_s:.1f}s). Starting ASR Heartbeat..."
+            srt_content = text_to_srt_whisper(text, audio_tuple, WHISPER_PIPE, progress=progress)
         
         # 4. Final Result Preparation
         # Keep audio_path as the MP3 for the UI yield to prevent reloads,
@@ -786,8 +725,7 @@ def build_app(model_path=None, whisper_path=None):
                 text=args[0], language=args[1], ref_audio=args[2], ref_text=args[3], 
                 instruct=args[4], num_step=args[5], guidance=args[6], denoise=args[7], 
                 convert_punc=args[8], speed=args[9], duration=args[10], 
-                pp=args[11], po=args[12], mode="clone", gen_srt=args[13],
-                progress=gr.Progress()
+                pp=args[11], po=args[12], mode="clone", gen_srt=args[13]
             ):
                 yield res
             
@@ -845,10 +783,7 @@ def build_app(model_path=None, whisper_path=None):
 
         def vd_handler(text, lang, speed, dur, steps, gs, dn, punc, po, gen_srt, *groups):
             instruct = ", ".join([g for g in groups if g != "Auto"])
-            for res in generate_core(
-                text, lang, None, None, instruct, steps, gs, dn, speed, dur, False, po, "design", gen_srt, punc,
-                progress=gr.Progress()
-            ):
+            for res in generate_core(text, lang, None, None, instruct, steps, gs, dn, speed, dur, False, po, "design", gen_srt, punc):
                 yield res
 
         vd_btn.click(
@@ -858,7 +793,6 @@ def build_app(model_path=None, whisper_path=None):
         ).then(lambda dl: gr.update(visible=bool(dl)), inputs=[vd_dl], outputs=[vd_dl])
 
         demo.load(None, None, None, js=_LYRICS_JS)
-        demo.queue() # Enable queuing for long-running SRT tasks
         
     return demo
 
@@ -872,10 +806,22 @@ if __name__ == "__main__":
     
     app = build_app(args.model, args.whisper)
     
-    # Launch with optimized settings for Colab
-    app.launch(
-        server_name="0.0.0.0", 
-        server_port=7860, 
-        share=args.share, 
-        show_error=True
-    )
+    # Launch in non-blocking mode first to capture the URLs
+    app.launch(server_name="0.0.0.0", server_port=7860, share=args.share, prevent_thread_lock=True)
+    
+    # Give it a second to finalize the share URL
+    import time
+    time.sleep(2)
+    
+    local_url = getattr(app, "local_url", "http://0.0.0.0:7860")
+    share_url = getattr(app, "share_url", None)
+    
+    print("\n" + "\033[94m" + "="*60 + "\033[0m")
+    print("\033[94m🚀 OmniWhisper is ACTIVE and READY!\033[0m")
+    print(f"\033[94m🏠 Local URL:  {local_url}\033[0m")
+    if share_url:
+        print(f"\033[94m🌐 Public URL: {share_url}\033[0m")
+    print("\033[94m" + "="*60 + "\033[0m\n")
+    
+    # Now block the thread to keep the app alive
+    app.block_thread()
