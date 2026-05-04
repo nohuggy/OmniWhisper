@@ -172,7 +172,13 @@ CSS = """
     border: none !important;
     box-shadow: none !important;
 }
-.output-panel { gap: 0 !important; overflow: visible !important; }
+.output-panel { 
+    gap: 0 !important; 
+    overflow: auto !important; 
+    max-height: 400px;
+    border: 1px solid #374151 !important;
+    border-radius: 8px !important;
+}
 
 .custom-label {
     display: inline-flex; align-items: center; gap: 6px;
@@ -220,6 +226,12 @@ button.primary, button.secondary {
 .lyric-line.past {
     color: rgba(255, 255, 255, 0.7) !important;
 }
+/* Ensure the SRT Textbox is always scrollable even when not interactive */
+#vc-srt-text textarea, #vd-srt-text textarea {
+    overflow-y: auto !important;
+    cursor: text !important;
+}
+
 .hidden-lyrics { display: none !important; }
 """
 
@@ -229,18 +241,23 @@ _LYRICS_JS = r"""
     
     function parseSRT(raw) {
         if (!raw) return [];
-        var blocks = raw.trim().split(/\\n\\n+/);
+        // Support both \n and \r\n and multiple spaces
+        var blocks = raw.trim().split(/\n\s*\n/);
         var cues = [];
         for (var b = 0; b < blocks.length; b++) {
-            var lines = blocks[b].split('\\n');
+            var lines = blocks[b].split('\n').map(l => l.trim());
             if (lines.length < 3) continue;
-            var times = lines[1].split(' --> ');
+            // Find the time line (usually the second line)
+            var timeLine = "";
+            for(var l=0; l<lines.length; l++) { if(lines[l].includes(' --> ')) { timeLine = lines[l]; break; } }
+            if(!timeLine) continue;
+            var times = timeLine.split(' --> ');
             if (times.length !== 2) continue;
             var s = times[0].replace(',','.').split(':');
             var e = times[1].replace(',','.').split(':');
             var startSec = parseFloat(s[0])*3600 + parseFloat(s[1])*60 + parseFloat(s[2]);
             var endSec   = parseFloat(e[0])*3600 + parseFloat(e[1])*60 + parseFloat(e[2]);
-            var txt = lines.slice(2).join(' ');
+            var txt = lines.slice(lines.indexOf(timeLine)+1).join(' ');
             cues.push({start: startSec, end: endSec, text: txt});
         }
         return cues;
@@ -300,6 +317,8 @@ _LYRICS_JS = r"""
         if (!box) return '';
         var ta = box.querySelector('textarea');
         if (ta) return ta.value;
+        var p = box.querySelector('p'); // Fallback for some Gradio versions
+        if (p) return p.innerText;
         return box.innerText || '';
     }
 
@@ -600,13 +619,22 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
             # Clear VRAM after TTS to make room for Whisper
             torch.cuda.empty_cache()
             
-            # CRITICAL FIX: To prevent the "Triple Reload" bug (where the audio player resets 3 times),
-            # we MUST yield the optimized MP3 path (audio_path) immediately after TTS.
-            # This allows the player to load ONCE and stay loaded during the ASR phase.
-            yield audio_path, "", None, f"⏳ TTS Done ({duration_s:.1f}s). Running ASR for alignment..."
+            # Yield early to keep the connection alive (Heartbeat)
+            yield audio_path, "", None, f"⏳ TTS Done ({duration_s:.1f}s). Preparing ASR alignment..."
+            
+            # Split Whisper into two yields if text is long
+            if len(text) > 500:
+                yield audio_path, "", None, f"⏳ Processing long text ({len(text)} chars). Running Whisper..."
+            
             srt_content = text_to_srt_whisper(text, audio_tuple, WHISPER_PIPE)
+            
             # Clear again after SRT
             torch.cuda.empty_cache()
+            
+            if not srt_content or "SRT Error" in srt_content:
+                yield audio_path, "", None, f"⚠️ SRT generation failed: {srt_content}"
+            else:
+                yield audio_path, srt_content, None, f"⏳ SRT Generated. Finalizing package..."
         
         # 4. Final Result Preparation
         # Keep audio_path as the MP3 for the UI yield to prevent reloads,
