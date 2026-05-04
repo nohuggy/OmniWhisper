@@ -83,8 +83,8 @@ def load_engines(model_path=None, whisper_path=None):
         pass
 
     if not has_weights:
-        print(f"📥 Downloading OmniVoice Weights (~1.5GB) to {model_path}...")
-        print("💡 This may take a few minutes depending on your internet speed.")
+        print(f"📥 Downloading OmniVoice Weights (~1.5GB) to ephemeral storage...")
+        print("💡 This happens on every fresh Colab session. Please wait a few minutes.")
         from huggingface_hub import snapshot_download
         try:
             snapshot_download(
@@ -110,8 +110,8 @@ def load_engines(model_path=None, whisper_path=None):
     if WHISPER_PIPE is None:
         has_whisper = os.path.exists(whisper_path) and any(f.endswith(('.bin', '.safetensors', '.pt')) for f in os.listdir(whisper_path) if os.path.isfile(os.path.join(whisper_path, f)))
         if not has_whisper:
-            print(f"📥 Downloading Whisper Turbo (~1.6GB) to {whisper_path}...")
-            print("💡 This may take a few minutes...")
+            print(f"📥 Downloading Whisper Turbo (~1.6GB) to ephemeral storage...")
+            print("💡 This happens on every fresh Colab session.")
             from huggingface_hub import snapshot_download
             try:
                 snapshot_download(
