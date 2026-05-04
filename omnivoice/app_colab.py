@@ -134,7 +134,7 @@ def load_engines(model_path=None, whisper_path=None):
             device=device,
             torch_dtype=torch.float16 if device == "cuda" else torch.float32,
             chunk_length_s=30,
-            batch_size=8
+            batch_size=1 # Reduce batch size to save memory on T4
         )
         print(f"✅ Engines Initialized on {device.upper()}")
         
@@ -597,11 +597,16 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
         # 4. SRT Generation
         srt_content = ""
         if gen_srt:
+            # Clear VRAM after TTS to make room for Whisper
+            torch.cuda.empty_cache()
+            
             # CRITICAL FIX: To prevent the "Triple Reload" bug (where the audio player resets 3 times),
             # we MUST yield the optimized MP3 path (audio_path) immediately after TTS.
             # This allows the player to load ONCE and stay loaded during the ASR phase.
             yield audio_path, "", None, f"⏳ TTS Done ({duration_s:.1f}s). Running ASR for alignment..."
             srt_content = text_to_srt_whisper(text, audio_tuple, WHISPER_PIPE)
+            # Clear again after SRT
+            torch.cuda.empty_cache()
         
         # 4. Final Result Preparation
         # Keep audio_path as the MP3 for the UI yield to prevent reloads,
