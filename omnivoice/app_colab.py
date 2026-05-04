@@ -608,9 +608,32 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
             # Re-yield the MP3 immediately after TTS to unfreeze player
             yield audio_path, "", None, "⏳ TTS Done. Starting ASR alignment (Whisper)..."
             
-            # During ASR, we must yield at least once more if it's long, 
-            # but since text_to_srt_whisper is blocking, we'll yield right before.
-            srt_content = text_to_srt_whisper(text, audio_tuple, WHISPER_PIPE, progress=progress)
+            # 🚀 ROBUST HEARTBEAT: Run ASR in a thread and yield every 0.5s to keep connection alive
+            import threading
+            asr_res = {"content": None, "error": None}
+            def run_asr():
+                try:
+                    asr_res["content"] = text_to_srt_whisper(text, audio_tuple, WHISPER_PIPE, progress=progress)
+                except Exception as e:
+                    asr_res["error"] = str(e)
+            
+            thread = threading.Thread(target=run_asr)
+            thread.start()
+            
+            dot_count = 0
+            while thread.is_alive():
+                dot_count = (dot_count + 1) % 4
+                dots = "." * dot_count
+                # Constant yield to keep Colab connection alive (Heartbeat)
+                yield audio_path, "", None, f"⏳ ASR Alignment in progress{dots}"
+                time.sleep(0.5)
+            
+            thread.join()
+            if asr_res["error"]:
+                srt_content = f"SRT Error: {asr_res['error']}"
+            else:
+                srt_content = asr_res["content"]
+                
             yield audio_path, srt_content, None, "⏳ ASR Alignment Complete. Packaging ZIP..."
         
         # 4. Final Result Preparation
@@ -758,9 +781,9 @@ def build_app(model_path=None, whisper_path=None):
                 return f"Error during transcription: {e}"
 
         def vc_handler(
-            text, lang, ref, ref_text, instruct, steps, gs, dn, punc, speed, dur, pp, po, gen_srt,
-            progress=gr.Progress()
+            progress, text, lang, ref, ref_text, instruct, steps, gs, dn, punc, speed, dur, pp, po, gen_srt
         ):
+            # Move progress to the first argument as Gradio often prefers this for visibility
             for res in generate_core(
                 text=text, language=lang, ref_audio=ref, ref_text=ref_text, 
                 instruct=instruct, num_step=steps, guidance=gs, denoise=dn, 
@@ -818,19 +841,19 @@ def build_app(model_path=None, whisper_path=None):
 
         vc_btn.click(
             vc_handler,
-            inputs=[vc_text, vc_lang, vc_ref, vc_ref_text, vc_instruct, vc_steps, vc_gs, vc_dn, vc_punc, vc_speed, vc_dur, vc_pp, vc_po, vc_gen_srt],
+            inputs=[gr.Progress(), vc_text, vc_lang, vc_ref, vc_ref_text, vc_instruct, vc_steps, vc_gs, vc_dn, vc_punc, vc_speed, vc_dur, vc_pp, vc_po, vc_gen_srt],
             outputs=[vc_audio, vc_srt, vc_dl, vc_status]
         ).then(lambda dl: gr.update(visible=bool(dl)), inputs=[vc_dl], outputs=[vc_dl])
 
 
-        def vd_handler(text, lang, speed, dur, steps, gs, dn, punc, po, gen_srt, g1, g2, g3, g4, g5, g6, progress=gr.Progress()):
-            instruct = ", ".join([g for g in [g1, g2, g3, g4, g5, g6] if g != "Auto"])
+        def vd_handler(progress, text, lang, speed, dur, steps, gs, dn, punc, po, gen_srt, *groups):
+            instruct = ", ".join([g for g in groups if g != "Auto"])
             for res in generate_core(text, lang, None, None, instruct, steps, gs, dn, speed, dur, False, po, "design", gen_srt, punc, progress=progress):
                 yield res
 
         vd_btn.click(
             vd_handler,
-            inputs=[vd_text, vd_lang, vd_speed, vd_dur, vd_steps, vd_gs, vd_dn, vd_punc, vd_po, vd_gen_srt] + vd_groups,
+            inputs=[gr.Progress(), vd_text, vd_lang, vd_speed, vd_dur, vd_steps, vd_gs, vd_dn, vd_punc, vd_po, vd_gen_srt] + vd_groups,
             outputs=[vd_audio, vd_srt, vd_dl, vd_status]
         ).then(lambda dl: gr.update(visible=bool(dl)), inputs=[vd_dl], outputs=[vd_dl])
 
