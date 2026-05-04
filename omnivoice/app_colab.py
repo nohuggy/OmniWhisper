@@ -579,14 +579,19 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
     lang_code = language if language != "Auto" else None
     
     try:
-        # 0. VRAM Protection: Ensure TTS Engine is on CUDA for generation
+        # 🚀 FULL VRAM SWAP: Move Whisper to CPU, Move TTS to CUDA
+        if WHISPER_PIPE and hasattr(WHISPER_PIPE, "model"):
+            if WHISPER_PIPE.model.device.type != "cpu":
+                print("💾 Moving Whisper to CPU to make room for TTS...")
+                WHISPER_PIPE.model.to("cpu")
+                torch.cuda.empty_cache()
+
         if TTS_ENGINE and hasattr(TTS_ENGINE, "model"):
             if next(TTS_ENGINE.model.parameters()).device.type == "cpu":
-                print("🚀 Moving TTS Engine back to CUDA...")
+                print("🚀 Moving TTS Engine to CUDA...")
                 TTS_ENGINE.model.to("cuda")
                 torch.cuda.empty_cache()
 
-        start_time = time.time()
         # 0. Immediate yield to remove "Loader GIF" and show activity
         if progress: progress(0.01, desc="🚀 Initializing Engines...")
         yield gr.update(), gr.update(), gr.update(), "🚀 Initializing synthesis..."
@@ -646,14 +651,15 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
         duration_s = len(full_waveform) / sr
         
         if gen_srt:
-            # 🚀 ULTIMATE STABILITY: CPU-Offload TTS Engine to free up ~10GB VRAM for Whisper
+            # 🚀 FULL VRAM SWAP: Move TTS to CPU, Move Whisper to CUDA
             if TTS_ENGINE and hasattr(TTS_ENGINE, "model"):
-                print("💾 CPU-Offloading TTS Engine to free VRAM for ASR...")
+                print("💾 Offloading TTS to CPU to make room for ASR...")
                 TTS_ENGINE.model.to("cpu")
                 torch.cuda.empty_cache()
             
-            # 🚀 Stability: Clear CUDA cache before heavy ASR task to prevent OOM/Reset
-            if torch.cuda.is_available():
+            if WHISPER_PIPE and hasattr(WHISPER_PIPE, "model"):
+                print("🚀 Moving Whisper to CUDA for ASR...")
+                WHISPER_PIPE.model.to("cuda")
                 torch.cuda.empty_cache()
             
             # 3. SRT Generation (🚀 RADICAL HEARTBEAT)
