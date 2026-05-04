@@ -600,7 +600,8 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
                 sr = TTS_ENGINE.sampling_rate
         
         # Intermediate yield to unfreeze UI after TTS
-        yield gr.update(), gr.update(), gr.update(), "⏳ TTS Done. Starting ASR alignment..."
+        # We don't have the audio_path yet, but we'll get it in the next few lines
+        yield gr.update(), gr.update(), gr.update(), "⏳ TTS Done. Preparing audio..."
         
         audio_tuple = (sr, full_waveform)
         duration_s = len(full_waveform) / sr
@@ -615,6 +616,9 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
         # Optimize for web (mp3 is much smaller and loads faster in Gradio)
         audio_path = optimize_audio_for_web(wav_path)
         
+        # 🚀 CRITICAL: Yield the audio player NOW so user can listen while ASR runs
+        yield audio_path, gr.update(), gr.update(), "⏳ Audio ready. Starting ASR alignment..."
+        
         # 4. SRT Generation
         srt_content = ""
         if gen_srt:
@@ -624,7 +628,8 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
             asr_res = {"content": None, "error": None}
             def run_asr():
                 try:
-                    asr_res["content"] = text_to_srt_whisper(text, audio_tuple, WHISPER_PIPE, progress=progress)
+                    # 🚀 REMOVED progress=progress to avoid thread race condition
+                    asr_res["content"] = text_to_srt_whisper(text, audio_tuple, WHISPER_PIPE)
                 except Exception as e:
                     asr_res["error"] = str(e)
             
@@ -640,8 +645,9 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
                     progress(0.8 + (dot_count * 0.03), desc=f"🔍 Aligning{dots}")
                 
                 # HEARTBEAT: Constant yield to keep Colab/Gradio connection active
+                # Use a high-frequency heartbeat (0.5s) to ensure connection never drops
                 yield gr.update(), gr.update(), gr.update(), f"⏳ ASR Alignment in progress{dots}"
-                time.sleep(1.0)
+                time.sleep(0.5)
             
             thread.join()
             if asr_res["error"]:
