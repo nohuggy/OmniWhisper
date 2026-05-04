@@ -165,7 +165,7 @@ CSS = """
     border: none !important;
     box-shadow: none !important;
 }
-.output-panel { gap: 0 !important; overflow: visible !important; }
+.output-panel { gap: 0 !important; overflow: hidden !important; }
 
 .custom-label {
     display: inline-flex; align-items: center; gap: 6px;
@@ -201,7 +201,7 @@ _SUBTITLE_CSS = """
 }
 #vc-srt-text, #vd-srt-text { 
     height: 250px; 
-    overflow-y: auto !important; 
+    overflow: hidden !important; 
 }
 #vc-srt-text textarea, #vd-srt-text textarea { 
     overflow-y: auto !important; 
@@ -581,10 +581,9 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
             if chunk_wave is None:
                 # Heartbeat via Progress bar to prevent Colab disconnection
                 if progress:
-                    progress((curr/total)*0.8, desc=f"⏳ Synthesizing TTS (Chunk {curr}/{total})")
-                # Restore status message for the user, but only every 10% to reduce flicker
-                if curr % max(1, total // 10) == 0 or curr == total:
-                    yield None, "", None, f"⏳ TTS Generation: Chunk {curr}/{total}"
+                    progress((curr/total)*0.8, desc=f"⏳ TTS ({curr}/{total})")
+                # Verbose status for UI feedback
+                yield None, "", None, f"⏳ TTS Generation: Chunk {curr}/{total}"
             else:
                 # Final chunk returned
                 full_waveform = chunk_wave
@@ -606,9 +605,13 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
         # 4. SRT Generation
         srt_content = ""
         if gen_srt:
-            # CRITICAL FIX: To prevent the "Triple Reload" bug, yield audio path immediately.
-            yield audio_path, "", None, f"⏳ TTS Done. Running ASR alignment..."
+            # Re-yield the MP3 immediately after TTS to unfreeze player
+            yield audio_path, "", None, "⏳ TTS Done. Starting ASR alignment (Whisper)..."
+            
+            # During ASR, we must yield at least once more if it's long, 
+            # but since text_to_srt_whisper is blocking, we'll yield right before.
             srt_content = text_to_srt_whisper(text, audio_tuple, WHISPER_PIPE, progress=progress)
+            yield audio_path, srt_content, None, "⏳ ASR Alignment Complete. Packaging ZIP..."
         
         # 4. Final Result Preparation
         # Keep audio_path as the MP3 for the UI yield to prevent reloads,
