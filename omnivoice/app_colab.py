@@ -578,17 +578,21 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
             postprocess_output=po
         )
         
+        # 2. TTS Generation (Smooth Progress)
+        if progress:
+            gen_iter = progress.tqdm(gen_iter, desc="⏳ Generating Audio...", total=num_step)
+            
+        full_waveform = []
+        sr = 16000
+        
+        last_yield_time = time.time()
         for curr, total, chunk_wave in gen_iter:
             if chunk_wave is None:
-                # 1. Update Top Progress Bar (Frequent updates here are SMOOTH and don't flicker)
-                if progress is not None:
-                    try: progress(curr/total * 0.8, desc=f"⏳ TTS ({curr}/{total})")
-                    except: pass
-                # 2. Update Status Text (ONLY every 10% to prevent UI Panel Flicker)
-                if curr % max(1, total // 10) == 0 or curr == total:
-                    yield gr.update(), gr.update(), gr.update(), f"⏳ TTS Generation: Chunk {curr}/{total}"
+                # Heartbeat every 2 seconds to keep connection alive without flickering
+                if time.time() - last_yield_time > 2.0:
+                    yield gr.update(), gr.update(), gr.update(), f"⏳ TTS Generation: {curr}/{total}"
+                    last_yield_time = time.time()
             else:
-                # Final chunk returned
                 full_waveform = chunk_wave
                 sr = TTS_ENGINE.sampling_rate
         
@@ -608,36 +612,34 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
         # 4. SRT Generation
         srt_content = ""
         if gen_srt:
-            # Re-yield the MP3 immediately after TTS to unfreeze player
-            # We use the real audio_path here so the user can start listening
-            yield audio_path, gr.update(), gr.update(), "⏳ TTS Done. Starting ASR alignment (Whisper)..."
+            # 1. Show audio immediately
+            yield audio_path, gr.update(), gr.update(), "⏳ TTS Done. Starting ASR alignment..."
             
-            # 🚀 ROBUST HEARTBEAT: Run ASR in a thread and yield every 1.0s to keep connection alive
+            # 2. Start ASR with explicit Progress updates
+            if progress: progress(0.8, desc="🔍 Aligning Subtitles (Whisper)...")
+            
             import threading
             asr_res = {"content": None, "error": None}
             def run_asr():
                 try:
-                    asr_res["content"] = text_to_srt_whisper(text, audio_tuple, WHISPER_PIPE, progress=progress)
+                    asr_res["content"] = text_to_srt_whisper(text, audio_tuple, WHISPER_PIPE)
                 except Exception as e:
                     asr_res["error"] = str(e)
             
             thread = threading.Thread(target=run_asr)
             thread.start()
             
+            # 3. Heartbeat loop during ASR
             dot_count = 0
             while thread.is_alive():
                 dot_count = (dot_count + 1) % 4
                 dots = "." * dot_count
-                
-                # Update top bar to keep it visible and moving slowly
                 if progress:
-                    # Move from 0.8 to 0.95 slowly during ASR
-                    progress(0.8 + (dot_count * 0.03), desc="⏳ ASR Alignment in progress...")
+                    # Slow crawl from 0.8 to 0.95
+                    progress(0.8 + (dot_count * 0.03), desc=f"🔍 Aligning{dots}")
                 
-                # Constant yield to keep Colab connection alive (Heartbeat)
-                # We use gr.no_update for audio/srt/dl to prevent flicker
                 yield gr.update(), gr.update(), gr.update(), f"⏳ ASR Alignment in progress{dots}"
-                time.sleep(1.0)
+                time.sleep(1.5) # Slower heartbeat to prevent flicker
             
             thread.join()
             if asr_res["error"]:
