@@ -238,8 +238,11 @@ _LYRICS_JS = """
         if (!box) return '';
         var ta = box.querySelector('textarea');
         if (ta) return ta.value;
-        var pt = box.querySelector('.plaintext') || box.querySelector('div[style*="white-space"]');
-        if (pt) return pt.innerText;
+        var elements = box.querySelectorAll('div, span, pre, p');
+        for (var i = 0; i < elements.length; i++) {
+            var txt = (elements[i].innerText || "").trim();
+            if (txt && /^\s*1\s*\n\s*00:/.test(txt)) return txt;
+        }
         var label = box.querySelector('label');
         var text = box.innerText || '';
         if (label && text.startsWith(label.innerText)) {
@@ -518,8 +521,8 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
             with zipfile.ZipFile(zip_path, "w") as zipf:
                 zipf.write(audio_path, arcname=f"{slug}.wav")
                 zipf.write(srt_path, arcname=f"{slug}.srt")
-            # Show ZIP Button
-            yield None, srt_content, zip_path, f"⏳ Files ready. Finishing..."
+            # Show everything as soon as ready to avoid clearing the UI
+            yield audio_path, srt_content, zip_path, f"⏳ Files ready. Finishing..."
         else:
             zip_path = audio_path
 
