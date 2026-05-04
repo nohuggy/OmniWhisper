@@ -1,6 +1,6 @@
 # 🎙️ OmniWhisper
 
-OmniWhisper is a production-grade **Text-to-Speech (TTS)** and **SRT Generation** pipeline specifically optimized for deployment on **Lightning.ai**. It integrates the high-fidelity voice cloning of OmniVoice with the robust, millisecond-accurate alignment of Whisper-Large-v3-Turbo.
+OmniWhisper is a production-grade **Text-to-Speech (TTS)** and **SRT Generation** pipeline. It integrates the high-fidelity voice cloning of OmniVoice with the robust, millisecond-accurate alignment of Whisper-Large-v3-Turbo.
 
 ## 🚀 Installation & Launch
 
