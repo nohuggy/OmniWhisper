@@ -804,6 +804,7 @@ def build_app(model_path=None, whisper_path=None):
         ).then(lambda dl: gr.update(visible=bool(dl)), inputs=[vd_dl], outputs=[vd_dl])
 
         demo.load(None, None, None, js=_LYRICS_JS)
+        demo.queue() # Enable queuing for long-running SRT tasks
         
     return demo
 
@@ -817,22 +818,10 @@ if __name__ == "__main__":
     
     app = build_app(args.model, args.whisper)
     
-    # Launch in non-blocking mode first to capture the URLs
-    app.launch(server_name="0.0.0.0", server_port=7860, share=args.share, prevent_thread_lock=True)
-    
-    # Give it a second to finalize the share URL
-    import time
-    time.sleep(2)
-    
-    local_url = getattr(app, "local_url", "http://0.0.0.0:7860")
-    share_url = getattr(app, "share_url", None)
-    
-    print("\n" + "\033[94m" + "="*60 + "\033[0m")
-    print("\033[94m🚀 OmniWhisper is ACTIVE and READY!\033[0m")
-    print(f"\033[94m🏠 Local URL:  {local_url}\033[0m")
-    if share_url:
-        print(f"\033[94m🌐 Public URL: {share_url}\033[0m")
-    print("\033[94m" + "="*60 + "\033[0m\n")
-    
-    # Now block the thread to keep the app alive
-    app.block_thread()
+    # Launch with optimized settings for Colab
+    app.launch(
+        server_name="0.0.0.0", 
+        server_port=7860, 
+        share=args.share, 
+        show_error=True
+    )
