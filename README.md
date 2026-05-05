@@ -23,75 +23,38 @@ cd OmniWhisper && git pull && bash boot.sh
 
 #### Fresh Initialisation
 
-```bash
-%%bash
+```python
 # 1. Go to the working directory and remove the old project
-cd /kaggle/working
-rm -rf OmniWhisper
+!cd /kaggle/working && rm -rf OmniWhisper
 
 # 2. Clone the updated repo
-git clone https://github.com/nohuggy/OmniWhisper.git
-cd OmniWhisper
+!git clone https://github.com/nohuggy/OmniWhisper.git
 
 # 3. Re-install the new Kaggle requirements
-pip install -r requirements_kaggle.txt
+!cd /kaggle/working/OmniWhisper && pip install -r requirements_kaggle.txt
 
-# 4. Create the parent folders for the links
-mkdir -p omnivoice
-mkdir -p whisper-large-v3-turbo
+# 4. Create the parent folders and Link (Using Direct Paths)
+!mkdir -p /kaggle/working/OmniWhisper/omnivoice /kaggle/working/OmniWhisper/whisper-large-v3-turbo
+!ln -sfn /kaggle/input/datasets/etallion/omniaudio/OmniVoice /kaggle/working/OmniWhisper/omnivoice/weights
+!ln -sfn /kaggle/input/datasets/etallion/whisper-turbo/whisper-large-v3-turbo /kaggle/working/OmniWhisper/whisper-large-v3-turbo/weights
 
-# 5. THE SMART LINKER (Connects your 100GB Datasets to the code)
-OMNI_SRC=$(find /kaggle/input -name "OmniVoice" -type d -print -quit)
-WHISPER_SRC=$(find /kaggle/input -name "whisper-large-v3-turbo" -type d -print -quit)
-
-if [ -n "$OMNI_SRC" ]; then
-    ln -s "$OMNI_SRC" ./omnivoice/weights
-    echo "✅ Linked OmniVoice"
-fi
-
-if [ -n "$WHISPER_SRC" ]; then
-    ln -s "$WHISPER_SRC" ./whisper-large-v3-turbo/weights
-    echo "✅ Linked Whisper Turbo"
-fi
-
-echo "----------------------------------------"
-echo "📂 Verifying paths exist before launching:"
-ls -d ./omnivoice/weights
-ls -d ./whisper-large-v3-turbo/weights
+# 5. Launch the App
+!cd /kaggle/working/OmniWhisper && bash boot_kaggle.sh
 ```
 
-#### Pull and Boot
+#### Pull and Boot (Unbuffered Logs)
 
-```bash
-%%bash
-# 1. Move to project directory
-cd /kaggle/working/OmniWhisper
+```python
+# 1. Sync latest code from GitHub
+!cd /kaggle/working/OmniWhisper && git pull origin main
 
-# 2. Sync latest code from GitHub
-echo "🔄 Pulling latest GitHub updates..."
-git pull origin main
+# 2. Direct Linker (Ensures links are fresh and correct)
+!mkdir -p /kaggle/working/OmniWhisper/omnivoice /kaggle/working/OmniWhisper/whisper-large-v3-turbo
+!ln -sfn /kaggle/input/datasets/etallion/omniaudio/OmniVoice /kaggle/working/OmniWhisper/omnivoice/weights
+!ln -sfn /kaggle/input/datasets/etallion/whisper-turbo/whisper-large-v3-turbo /kaggle/working/OmniWhisper/whisper-large-v3-turbo/weights
 
-# 3. Smart Linker (Finds the 6GB models in /kaggle/input)
-echo "🔗 Refreshing model links..."
-# Remove old links/folders to prevent "broken link" errors
-rm -rf ./omnivoice/weights ./whisper-large-v3-turbo/weights
-mkdir -p ./omnivoice ./whisper-large-v3-turbo
-
-# Automatically find the real paths in your Kaggle Input
-OMNI_SRC=$(find /kaggle/input -name "OmniVoice" -type d -print -quit)
-WHISPER_SRC=$(find /kaggle/input -name "whisper-large-v3-turbo" -type d -print -quit)
-
-if [ -n "$OMNI_SRC" ] && [ -n "$WHISPER_SRC" ]; then
-    ln -s "$OMNI_SRC" ./omnivoice/weights
-    ln -s "$WHISPER_SRC" ./whisper-large-v3-turbo/weights
-    echo "✅ Models linked successfully."
-else
-    echo "❌ ERROR: Datasets not found in /kaggle/input!"
-fi
-
-# 4. Launch the App
-echo "🚀 Launching OmniWhisper..."
-bash boot_kaggle.sh
+# 3. Launch the App
+!cd /kaggle/working/OmniWhisper && bash boot_kaggle.sh
 ```
 
 #### Preparing Kaggle Datasets (One-time Setup)
@@ -142,6 +105,28 @@ Now you are ready to build! Go to your Main OmniWhisper Notebook and attach both
 2. Add your `omniaudio` dataset.
 3. Click **+ Add Data** again.
 4. Add your `whisper-turbo-weights` dataset.
+
+## 🚀 Recent Stabilization Fixes (Post-Mortem)
+
+The following critical updates were implemented to ensure stability in production environments (specifically Kaggle):
+
+### 1. "Pro-Subtitle" Splitting (11±4 Rule)
+Implemented a **5-Token Guard** in the SRT alignment engine.
+- **Orphan Prevention:** If a split would leave fewer than 5 tokens for the next line, the engine automatically merges them into the current line.
+- **Conservative Planning:** Switched from `round()` to `int()` for segment budgeting to ensure balanced line distribution across long paragraphs.
+
+### 2. Kaggle Discovery & "Direct Linker"
+Resolved the **"X-Ray Path"** issue where models were hidden deep within Kaggle's nested mount system.
+- **Hyphen Resolution:** Corrected pathing from `whisper_turbo` to `whisper-turbo` as discovered by recursive scan logs.
+- **Symlink Enforcement:** Switched to `ln -sfn` to ensure links are atomic and valid across session restarts.
+
+### 3. Log Buffering Fix
+- **The Problem:** `%%bash` in Kaggle cells buffers all output until the process ends, hiding logs from web servers.
+- **The Fix:** Replaced with `!` commands and added `sys.stdout.flush()` to all Python logs. You now see the `⚡️ SCRIPT STARTING` heartbeat instantly.
+
+### 4. Scope & Import Integrity
+- **NameError Prevention:** All heavy dependencies (Transformers, OmniEngine) are now localized within their specific execution functions. This allows for a fast 1-second startup while ensuring that tools like `unify_punctuation` and `get_slug` are available at runtime.
+- **`re` Restoration:** Re-implemented missing regex imports that were causing SRT processing crashes.
 
 ## 🔧 Technical Notes
 - **Bracket-Aware Splitting**: The SRT alignment engine (`whisper_engine.py`) handles Chinese/English punctuation and brackets correctly to prevent orphaned marks at the start of lines.
