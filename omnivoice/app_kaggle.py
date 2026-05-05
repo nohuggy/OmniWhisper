@@ -137,16 +137,9 @@ def get_tts_engine(model_path=None):
                 if root.count(os.sep) - model_path.count(os.sep) >= 1: break # Don't go too deep
 
         if not has_weights:
-            print(f"📥 Downloading OmniVoice Weights (~1.5GB) to {model_path}...")
-            from huggingface_hub import snapshot_download
-            try:
-                os.makedirs(model_path, exist_ok=True)
-                snapshot_download(repo_id="k2-fsa/OmniVoice", local_dir=model_path, local_dir_use_symlinks=False)
-            except Exception as e:
-                print(f"⚠️ Download failed: {e}. Trying git fallback...")
-                tmp_dir = f"{model_path}_tmp"
-                os.system(f"git clone --depth 1 https://huggingface.co/k2-fsa/OmniVoice {tmp_dir}")
-                os.system(f"cp -r {tmp_dir}/* {model_path}/ && rm -rf {tmp_dir}")
+            print(f"❌ ERROR: OmniVoice weights not found in {model_path}!")
+            print("Please ensure you have attached the OmniVoice dataset to your Kaggle Notebook.")
+            raise FileNotFoundError(f"Could not find valid weights in {model_path}")
         else:
             print(f"✅ OmniVoice models found in {model_path}. Skipping download.")
             # Verify with snapshot_download (offline mode)
@@ -193,16 +186,9 @@ def get_whisper_pipe(whisper_path=None):
                 if root.count(os.sep) - whisper_path.count(os.sep) >= 1: break
 
         if not has_whisper:
-            print(f"📥 Downloading Whisper Turbo (~1.6GB) to {whisper_path}...")
-            from huggingface_hub import snapshot_download
-            try:
-                os.makedirs(whisper_path, exist_ok=True)
-                snapshot_download(repo_id='openai/whisper-large-v3-turbo', local_dir=whisper_path, local_dir_use_symlinks=False)
-            except Exception as e:
-                print(f"⚠️ Download failed: {e}. Trying git fallback...")
-                tmp_dir = f"{whisper_path}_tmp"
-                os.system(f"git clone --depth 1 https://huggingface.co/openai/whisper-large-v3-turbo {tmp_dir}")
-                os.system(f"cp -r {tmp_dir}/* {whisper_path}/ && rm -rf {tmp_dir}")
+            print(f"❌ ERROR: Whisper Turbo weights not found in {whisper_path}!")
+            print("Please ensure you have attached the Whisper Large V3 Turbo dataset.")
+            raise FileNotFoundError(f"Could not find valid weights in {whisper_path}")
         else:
             print(f"✅ Whisper Turbo models found in {whisper_path}. Skipping download.")
             from huggingface_hub import snapshot_download
