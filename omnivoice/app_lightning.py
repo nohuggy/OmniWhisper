@@ -42,7 +42,7 @@ for p in [project_root, os.path.dirname(os.path.abspath(__file__)), os.path.join
         sys.path.append(p)
 
 from omni_engine import TTSEngine, get_slug
-from whisper_engine import format_timestamp, unify_punctuation, smart_balanced_split, align_robust
+from whisper_engine_lightning import format_timestamp, unify_punctuation, smart_balanced_split, align_robust
 from transformers import pipeline
 
 # ---------------------------------------------------------------------------

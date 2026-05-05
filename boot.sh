@@ -16,7 +16,7 @@ if command -v lsof >/dev/null 2>&1; then
 else
     # Fallback to pkill if lsof is missing
     echo "ℹ️ lsof not found, using pkill fallback..."
-    pkill -9 -f "omnivoice/app.py" || true
+    pkill -9 -f "omnivoice/app_lightning.py" || true
     pkill -9 -f "gradio" || true
 fi
 
@@ -59,4 +59,4 @@ echo "🌐 Launching WebUI..."
 export PYTHONPATH=$PYTHONPATH:.
 
 # We point to the local folder for the model
-python3 omnivoice/app.py --model "./omnivoice/resources" --whisper "$WHISPER_DIR" --share
+python3 omnivoice/app_lightning.py --model "./omnivoice/resources" --whisper "$WHISPER_DIR" --share
