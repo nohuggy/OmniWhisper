@@ -207,7 +207,7 @@ def _resolve_model_path(name_or_path: str) -> str:
 
     # If not a directory, treat as a Hugging Face repo ID
     from huggingface_hub import snapshot_download
-    return snapshot_download(name_or_path)
+    return snapshot_download(name_or_path, local_files_only=True)
 
 
 class OmniVoice(PreTrainedModel):
@@ -270,10 +270,10 @@ class OmniVoice(PreTrainedModel):
             # Resolve to local path first; download only if not already cached
             resolved_path = _resolve_model_path(pretrained_model_name_or_path)
 
-            model = super().from_pretrained(resolved_path, *args, **kwargs)
+            model = super().from_pretrained(resolved_path, *args, local_files_only=True, **kwargs)
 
             if not train_mode:
-                model.text_tokenizer = AutoTokenizer.from_pretrained(resolved_path)
+                model.text_tokenizer = AutoTokenizer.from_pretrained(resolved_path, local_files_only=True)
 
                 audio_tokenizer_path = os.path.join(resolved_path, "audio_tokenizer")
 
@@ -289,15 +289,15 @@ class OmniVoice(PreTrainedModel):
                 )
                 if HiggsAudioV2TokenizerModel is not None:
                     model.audio_tokenizer = HiggsAudioV2TokenizerModel.from_pretrained(
-                        audio_tokenizer_path, device_map=tokenizer_device
+                        audio_tokenizer_path, device_map=tokenizer_device, local_files_only=True
                     )
                 else:
                     logger.warning("HiggsAudioV2TokenizerModel not found in transformers, falling back to AutoModel (trust_remote_code=True)")
                     model.audio_tokenizer = AutoModel.from_pretrained(
-                        audio_tokenizer_path, device_map=tokenizer_device, trust_remote_code=True
+                        audio_tokenizer_path, device_map=tokenizer_device, trust_remote_code=True, local_files_only=True
                     )
                 model.feature_extractor = AutoFeatureExtractor.from_pretrained(
-                    audio_tokenizer_path
+                    audio_tokenizer_path, local_files_only=True
                 )
 
                 model.sampling_rate = model.feature_extractor.sampling_rate
@@ -332,7 +332,7 @@ class OmniVoice(PreTrainedModel):
         
         processor = WhisperProcessor.from_pretrained(
             model_name, 
-            local_files_only=is_local
+            local_files_only=True
         )
         # Choose appropriate dtype for ASR
         asr_dtype = torch.float16 if "cuda" in str(self.device) else torch.float32
@@ -340,7 +340,7 @@ class OmniVoice(PreTrainedModel):
         model = WhisperForConditionalGeneration.from_pretrained(
             model_name, 
             torch_dtype=asr_dtype,
-            local_files_only=is_local
+            local_files_only=True
         ).to(self.device)
 
         self._asr_pipe = hf_pipeline(

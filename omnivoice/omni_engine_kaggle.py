@@ -40,6 +40,7 @@ class TTSEngine:
             model_path, 
             device_map=self.device,
             torch_dtype=self.dtype,
+            local_files_only=True,
             asr_model_name=os.path.join(os.path.dirname(model_path), "whisper-large-v3-turbo") if os.path.exists(os.path.join(os.path.dirname(model_path), "whisper-large-v3-turbo")) else "openai/whisper-large-v3-turbo"
         )
         self.sampling_rate = self.model.sampling_rate

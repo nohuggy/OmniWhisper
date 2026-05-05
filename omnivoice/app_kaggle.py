@@ -79,25 +79,33 @@ from transformers import pipeline
 # ---------------------------------------------------------------------------
 # Global Engines
 # ---------------------------------------------------------------------------
-TTS_ENGINE = None
-WHISPER_PIPE = None
+# 1. Define the LOCAL paths (where the Symlinks are)
+OMNI_LOCAL = "./omnivoice/weights"
+WHISPER_LOCAL = "./whisper-large-v3-turbo/weights"
 
 def get_tts_engine(model_path=None):
     global TTS_ENGINE
     if TTS_ENGINE is None:
         if model_path is None:
-            model_path = os.path.join(os.path.dirname(__file__), "resources")
+            model_path = OMNI_LOCAL
             
         # Ensure model directory exists and has weights
         has_weights = os.path.exists(model_path) and any(f.endswith(('.bin', '.safetensors')) for f in os.listdir(model_path))
         if not has_weights:
-            print(f"📥 Downloading OmniVoice Weights (~1.5GB) to ephemeral storage...")
+            print(f"📥 Downloading OmniVoice Weights (~1.5GB) to {model_path}...")
             from huggingface_hub import snapshot_download
             try:
                 snapshot_download(repo_id="k2-fsa/OmniVoice", local_dir=model_path, local_dir_use_symlinks=False)
             except Exception as e:
                 print(f"⚠️ Download failed: {e}. Trying git fallback...")
                 os.system(f"git clone https://huggingface.co/k2-fsa/OmniVoice {model_path}_tmp && mv {model_path}_tmp/* {model_path}/ && rm -rf {model_path}_tmp")
+        else:
+            print(f"✅ OmniVoice models found in {model_path}. Skipping download.")
+            # Still call snapshot_download with local_files_only=True to ensure everything is linked correctly if needed
+            from huggingface_hub import snapshot_download
+            try:
+                snapshot_download(repo_id="k2-fsa/OmniVoice", local_dir=model_path, local_files_only=True)
+            except: pass
 
         device = "cuda" if torch.cuda.is_available() else "cpu"
         dtype = torch.float32 if device == "cpu" else torch.float16
@@ -108,23 +116,30 @@ def get_whisper_pipe(whisper_path=None):
     global WHISPER_PIPE
     if WHISPER_PIPE is None:
         if whisper_path is None:
-            whisper_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "whisper-large-v3-turbo")
+            whisper_path = WHISPER_LOCAL
             
         # Ensure whisper directory exists and has weights
         has_whisper = os.path.exists(whisper_path) and any(f.endswith(('.bin', '.safetensors', '.pt')) for f in os.listdir(whisper_path) if os.path.isfile(os.path.join(whisper_path, f)))
         if not has_whisper:
-            print(f"📥 Downloading Whisper Turbo (~1.6GB) to ephemeral storage...")
+            print(f"📥 Downloading Whisper Turbo (~1.6GB) to {whisper_path}...")
             from huggingface_hub import snapshot_download
             try:
                 snapshot_download(repo_id='openai/whisper-large-v3-turbo', local_dir=whisper_path, local_dir_use_symlinks=False)
             except Exception as e:
                 print(f"⚠️ Download failed: {e}. Trying git fallback...")
                 os.system(f"git clone https://huggingface.co/openai/whisper-large-v3-turbo {whisper_path}_tmp && mv {whisper_path}_tmp/* {whisper_path}/ && rm -rf {whisper_path}_tmp")
+        else:
+            print(f"✅ Whisper Turbo models found in {whisper_path}. Skipping download.")
+            from huggingface_hub import snapshot_download
+            try:
+                snapshot_download(repo_id='openai/whisper-large-v3-turbo', local_dir=whisper_path, local_files_only=True)
+            except: pass
 
         device = "cuda" if torch.cuda.is_available() else "cpu"
         dtype = torch.float32 if device == "cpu" else torch.float16
         from transformers import pipeline
-        WHISPER_PIPE = pipeline("automatic-speech-recognition", model=whisper_path, device=device, torch_dtype=dtype)
+        # Use local_files_only=True for transformers pipeline
+        WHISPER_PIPE = pipeline("automatic-speech-recognition", model=whisper_path, device=device, torch_dtype=dtype, model_kwargs={"local_files_only": True})
     return WHISPER_PIPE
 
 def unload_tts():

@@ -202,7 +202,7 @@ def run_production_pipeline(input_dir, output_dir, model_path):
     
     # Load model once
     print(f"Loading Whisper model from: {model_path}")
-    pipe = pipeline("automatic-speech-recognition", model=model_path, device="cpu")
+    pipe = pipeline("automatic-speech-recognition", model=model_path, device="cpu", model_kwargs={"local_files_only": True})
 
     # Find all .wav files in the input directory
     wav_files = glob.glob(os.path.join(input_dir, "*.wav"))
