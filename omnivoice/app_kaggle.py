@@ -98,13 +98,14 @@ def find_kaggle_dataset(name_pattern):
     # 1. Full Tree Print (Helpful for debugging)
     print("📂 Directory Structure of /kaggle/input:")
     for root, dirs, files in os.walk("/kaggle/input"):
-        if root.count(os.sep) > 4: continue
+        if root.count(os.sep) > 6: continue # Increased depth
         indent = "  " * (root.count(os.sep) - 2)
         print(f"{indent}📁 {os.path.basename(root)}/ ({len(files)} files)")
 
     # 2. Search by Large File Content
-    # Models are always >100MB. We search for any large files and identify the folder.
     for root, dirs, files in os.walk("/kaggle/input"):
+        # Models are deep on Kaggle
+        if root.count(os.sep) > 10: continue 
         for f in files:
             fpath = os.path.join(root, f)
             try:
