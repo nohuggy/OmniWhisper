@@ -47,12 +47,21 @@ import torchaudio
 # This allows loading the model even if the .py files are missing from the dataset
 try:
     from transformers.models.auto.configuration_auto import CONFIG_MAPPING
-    from transformers import PretrainedConfig
+    from transformers.models.auto.modeling_auto import MODEL_MAPPING
+    from transformers import PretrainedConfig, AutoModel
+    
     if "higgs_audio_v2_tokenizer" not in CONFIG_MAPPING:
         class HiggsAudioV2TokenizerConfig(PretrainedConfig):
             model_type = "higgs_audio_v2_tokenizer"
+        
+        # Register in both Config and Model mappings
         CONFIG_MAPPING.register("higgs_audio_v2_tokenizer", HiggsAudioV2TokenizerConfig)
-        print("Successfully registered 'higgs_audio_v2_tokenizer' to CONFIG_MAPPING")
+        
+        # We map it to the generic AutoModel logic to allow weight loading
+        # This bypasses the "Unrecognized configuration class" error
+        MODEL_MAPPING.register(HiggsAudioV2TokenizerConfig, AutoModel)
+        
+        print("Successfully registered 'higgs_audio_v2_tokenizer' to CONFIG and MODEL mappings")
 except Exception as e:
     print(f"Failed to patch CONFIG_MAPPING: {e}")
 
