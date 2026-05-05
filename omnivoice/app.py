@@ -378,7 +378,7 @@ def optimize_audio_for_web(wav_path):
 # Core Logic
 # ---------------------------------------------------------------------------
 
-def text_to_srt_whisper(text, audio_tuple, pipe, language="zh"):
+def text_to_srt_whisper(text, audio_tuple, pipe, srt_max_words=17, language="zh"):
     """Generate SRT using Whisper word-level timestamps via pipeline."""
     try:
         sr, waveform = audio_tuple
@@ -389,7 +389,7 @@ def text_to_srt_whisper(text, audio_tuple, pipe, language="zh"):
         result = pipe({"sampling_rate": sr, "raw": waveform_f32}, return_timestamps="word")
         chunks = result.get("chunks", [])
         
-        segments = smart_balanced_split(text)
+        segments = smart_balanced_split(text, target_words=12, max_words=srt_max_words)
         
         # 1. Global Clock Reconstruction (Fixing the Whisper 30s Wall)
         abs_chunks = []
@@ -485,7 +485,7 @@ def text_to_srt_whisper(text, audio_tuple, pipe, language="zh"):
     except Exception as e:
         return f"SRT Error: {e}"
 
-def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guidance, denoise, speed, duration, pp, po, mode, gen_srt=True, convert_punc=True):
+def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guidance, denoise, speed, duration, pp, po, mode, srt_max_words=17, gen_srt=True, convert_punc=True):
     """
     Central orchestration loop for OmniVoice synthesis.
     Flow: 
@@ -557,7 +557,7 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
             # we MUST yield the optimized MP3 path (audio_path) immediately after TTS.
             # This allows the player to load ONCE and stay loaded during the ASR phase.
             yield audio_path, "", None, f"⏳ TTS Done ({duration_s:.1f}s). Running ASR for alignment..."
-            srt_content = text_to_srt_whisper(text, audio_tuple, WHISPER_PIPE)
+            srt_content = text_to_srt_whisper(text, audio_tuple, WHISPER_PIPE, srt_max_words=srt_max_words)
         
         # 4. Final Result Preparation
         # Keep audio_path as the MP3 for the UI yield to prevent reloads,
@@ -632,6 +632,7 @@ def build_app(model_path=None, whisper_path=None):
                             vc_pp = gr.Checkbox(label="Clean Ref Audio (Silence Removal)", value=True)
                             vc_po = gr.Checkbox(label="Trim Output Silence", value=True)
                             vc_gen_srt = gr.Checkbox(label="Generate Subtitles (SRT)", value=True)
+                            vc_srt_max_words = gr.Slider(15, 22, value=17, step=1, label="Max Words Per Line")
                             vc_punc = gr.Checkbox(label="Convert Punctuation", value=True)
                             
                         vc_btn = gr.Button("Generate Voice", variant="primary")
@@ -672,6 +673,7 @@ def build_app(model_path=None, whisper_path=None):
                             vd_dn = gr.Checkbox(label="Denoise", value=True)
                             vd_po = gr.Checkbox(label="Trim Output Silence", value=True)
                             vd_gen_srt = gr.Checkbox(label="Generate Subtitles (SRT)", value=True)
+                            vd_srt_max_words = gr.Slider(15, 22, value=17, step=1, label="Max Words Per Line")
                             vd_punc = gr.Checkbox(label="Convert Punctuation", value=True)
 
                         vd_btn = gr.Button("Create Voice", variant="primary")
@@ -702,12 +704,11 @@ def build_app(model_path=None, whisper_path=None):
                 return f"Error during transcription: {e}"
 
         def vc_handler(*args):
-            # 0:text, 1:lang, 2:ref_audio, 3:ref_text, 4:instruct, 5:steps, 6:gs, 7:denoise, 8:punc, 9:speed, 10:dur, 11:pp, 12:po, 13:gen_srt
             for res in generate_core(
                 text=args[0], language=args[1], ref_audio=args[2], ref_text=args[3], 
                 instruct=args[4], num_step=args[5], guidance=args[6], denoise=args[7], 
                 convert_punc=args[8], speed=args[9], duration=args[10], 
-                pp=args[11], po=args[12], mode="clone", gen_srt=args[13]
+                pp=args[11], po=args[12], mode="clone", srt_max_words=args[13], gen_srt=args[14]
             ):
                 yield res
             
@@ -759,18 +760,18 @@ def build_app(model_path=None, whisper_path=None):
 
         vc_btn.click(
             vc_handler,
-            inputs=[vc_text, vc_lang, vc_ref, vc_ref_text, vc_instruct, vc_steps, vc_gs, vc_dn, vc_punc, vc_speed, vc_dur, vc_pp, vc_po, vc_gen_srt],
+            inputs=[vc_text, vc_lang, vc_ref, vc_ref_text, vc_instruct, vc_steps, vc_gs, vc_dn, vc_punc, vc_speed, vc_dur, vc_pp, vc_po, vc_srt_max_words, vc_gen_srt],
             outputs=[vc_audio, vc_srt, vc_dl, vc_status]
         ).then(lambda dl: gr.update(visible=bool(dl)), inputs=[vc_dl], outputs=[vc_dl])
 
-        def vd_handler(text, lang, speed, dur, steps, gs, dn, punc, po, gen_srt, *groups):
+        def vd_handler(text, lang, speed, dur, steps, gs, dn, punc, po, srt_max_words, gen_srt, *groups):
             instruct = ", ".join([g for g in groups if g != "Auto"])
-            for res in generate_core(text, lang, None, None, instruct, steps, gs, dn, speed, dur, False, po, "design", gen_srt, punc):
+            for res in generate_core(text, lang, None, None, instruct, steps, gs, dn, speed, dur, False, po, "design", srt_max_words=srt_max_words, gen_srt=gen_srt, convert_punc=punc):
                 yield res
 
         vd_btn.click(
             vd_handler,
-            inputs=[vd_text, vd_lang, vd_speed, vd_dur, vd_steps, vd_gs, vd_dn, vd_punc, vd_po, vd_gen_srt] + vd_groups,
+            inputs=[vd_text, vd_lang, vd_speed, vd_dur, vd_steps, vd_gs, vd_dn, vd_punc, vd_po, vd_srt_max_words, vd_gen_srt] + vd_groups,
             outputs=[vd_audio, vd_srt, vd_dl, vd_status]
         ).then(lambda dl: gr.update(visible=bool(dl)), inputs=[vd_dl], outputs=[vd_dl])
 

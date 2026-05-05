@@ -38,7 +38,7 @@ def format_timestamp(seconds):
 # same line as its content.
 # ---------------------------------------------------------------------------
 
-def smart_balanced_split(text):
+def smart_balanced_split(text, target_words=12, max_words=17):
     if not text: return []
     # Split into paragraphs first to avoid remainder accumulation
     paragraphs = [p.strip() for p in text.split('\n') if p.strip()]
@@ -56,57 +56,48 @@ def smart_balanced_split(text):
             tokens.append(lead_punct + word + trail_punct + space)
         
         if not tokens: continue
-        
-        # Calculate segment budget
-        # We use floor for a more conservative count to avoid orphans
-        num_segments = max(1, int(len(tokens) / 11))
-        
-        # If the average tokens per line would be too high (>15), add a segment
-        if len(tokens) / num_segments > 15:
-            num_segments += 1
-            
-        avg_tokens = len(tokens) / num_segments
-        start_idx = 0
-        for i in range(num_segments):
-            # LAST SEGMENT HANDLING
-            if i == num_segments - 1:
-                final_tokens = tokens[start_idx:]
-                # If we have a previous segment and this one is an "orphan" (very short),
-                # we should have merged it. But since we are here, just add it.
-                # The look-ahead below usually prevents this.
-                all_segments.append("".join(final_tokens).strip())
-                break
-                
-            ideal_end = start_idx + int(avg_tokens)
-            
-            # ORPHAN PREVENTION: Look ahead to see if splitting here leaves too few tokens
-            # If remaining tokens < 5, just merge everything into this segment and finish.
-            remaining_after_ideal = len(tokens) - ideal_end
-            if remaining_after_ideal < 5 and i == num_segments - 2:
-                all_segments.append("".join(tokens[start_idx:]).strip())
-                break
 
+        # 🚀 RECURSIVE BALANCED SPLIT (GUARANTEES MAX BOUNDS)
+        def split_recursive(tkns):
+            if len(tkns) <= max_words:
+                return ["".join(tkns).strip()]
+            
+            # Determine ideal segments
+            n = max(2, round(len(tkns) / target_words))
+            avg = len(tkns) / n
+            ideal_end = int(avg)
+            
             best_break = ideal_end
             min_p = 1000
-            # Window search for best punctuation
-            for offset in range(-5, 6):
+            # Search window for best punctuation (wider search for recursive splits)
+            for offset in range(-8, 9):
                 idx = ideal_end + offset
-                if idx <= start_idx or idx >= len(tokens): continue
+                if idx <= 0 or idx >= len(tkns): continue
                 
-                # Critical: Don't break if it leaves an orphan (< 5 tokens) for the NEXT line
-                # unless it's the very last segment calculation
-                if (len(tokens) - idx) < 5 and i < num_segments - 1:
-                    continue
-
-                t = tokens[idx - 1]
-                p = abs(offset) * 3
-                if any(x in t for x in "。！？.!?;；…"): p -= 30
-                elif any(x in t for x in "，,"): p -= 15
+                # Critical: Strongly penalize splits that leave orphans (< 4 tokens)
+                p_orphan = 0
+                if idx < 4 or (len(tkns) - idx) < 4:
+                    p_orphan = 100
+                    
+                t = tkns[idx - 1]
+                p = abs(offset) * 4 + p_orphan
+                
+                # Punctuation Bonuses
+                if any(x in t for x in "。！？.!?;；…"): p -= 80
+                elif any(x in t for x in "，,"): p -= 40
+                elif any(x in t for x in "”’」』"): p -= 20 # Quote trailing
                 else: p += 40
-                if p < min_p: min_p = p; best_break = idx
+                
+                if p < min_p:
+                    min_p = p
+                    best_break = idx
             
-            all_segments.append("".join(tokens[start_idx:best_break]).strip())
-            start_idx = best_break
+            # Divide and Conquer
+            left = tkns[:best_break]
+            right = tkns[best_break:]
+            return split_recursive(left) + split_recursive(right)
+
+        all_segments.extend(split_recursive(tokens))
             
     return all_segments
 
