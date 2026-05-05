@@ -91,11 +91,7 @@ fi
 
 # 4. Launch the App
 echo "🚀 Launching OmniWhisper..."
-# We set OFFLINE=1 to guarantee it NEVER downloads 5GB to your 20GB space
-export HF_HUB_OFFLINE=1
-export TRANSFORMERS_OFFLINE=1
-
-python omnivoice/app_kaggle.py
+bash boot_kaggle.sh
 ```
 
 #### Preparing Kaggle Datasets (One-time Setup)
