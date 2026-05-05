@@ -101,7 +101,7 @@ python omnivoice/app_kaggle.py
 #### Preparing Kaggle Datasets (One-time Setup)
 
 > [!TIP]
-> **Why do this?** Kaggle provides over 240GB of permanent storage for Datasets, but only 20GB of temporary space in a Notebook's working directory. By moving these massive models (totaling ~10GB+) into Datasets, you not only avoid hitting the 20GB disk limit but also significantly speed up the boot time since the models are pre-cached and mounted instantly.
+> **Why do this?** Kaggle provides over 240GB of permanent storage for Datasets, but only 20GB of temporary space in a Notebook's working directory. By moving these massive models (totaling ~6.6GB) into Datasets, you not only avoid hitting the 20GB disk limit but also significantly speed up the boot time since the models are pre-cached and mounted instantly.
 
 This is even easier because Whisper Large-v3-Turbo is a standard Transformers model. We will follow the same "Worker Notebook" pattern as before to ensure you get the directory structure exactly right.
 
