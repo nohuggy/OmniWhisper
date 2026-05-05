@@ -87,34 +87,38 @@ TTS_ENGINE = None
 WHISPER_PIPE = None
 
 def find_kaggle_dataset(name_pattern):
-    """Try to find a dataset folder in /kaggle/input that matches the pattern."""
+    """Deep scan /kaggle/input for folders containing model weights."""
     if not os.path.exists("/kaggle/input"):
         return None
     import glob
-    print(f"🔎 Searching for '{name_pattern}' in /kaggle/input...")
+    print(f"🔎 Deep-scanning /kaggle/input for '{name_pattern}'...")
     
-    # List everything found for debugging
+    # 1. First, check if any folder name matches (fast path)
     all_inputs = glob.glob("/kaggle/input/*")
-    print(f"📂 Found in /kaggle/input: {[os.path.basename(p) for p in all_inputs]}")
-    
-    # Expand patterns: "OmniVoice" -> check for "omni", "audio", "voice"
-    patterns = [name_pattern.lower()]
-    if name_pattern.lower() == "omnivoice":
-        patterns.extend(["omni", "audio", "voice"])
-    elif name_pattern.lower() == "whisper":
-        patterns.extend(["turbo", "large-v3"])
-
     for path in all_inputs:
         if os.path.isdir(path):
-            base = os.path.basename(path).lower()
-            if any(p in base for p in patterns):
+            if name_pattern.lower() in os.path.basename(path).lower():
                 return path
-            # Check subfolders (Kaggle often nests them)
-            for sub in glob.glob(os.path.join(path, "*")):
-                if os.path.isdir(sub):
-                    sub_base = os.path.basename(sub).lower()
-                    if any(p in sub_base for p in patterns):
-                        return sub
+
+    # 2. Deep scan: look for specific files that identify the model
+    # For OmniVoice, we look for 'audio_tokenizer' folder or 'model.safetensors'
+    # For Whisper, we look for 'config.json' and 'model.safetensors'
+    for root, dirs, files in os.walk("/kaggle/input"):
+        # Don't go too deep to save time
+        if root.count(os.sep) > 5: continue
+        
+        dirname = os.path.basename(root).lower()
+        
+        if name_pattern.lower() == "omnivoice":
+            # OmniVoice unique markers
+            if "audio_tokenizer" in dirs or "omnivoice" in dirname or "omniaudio" in dirname:
+                if any(f.endswith(('.bin', '.safetensors')) for f in files):
+                    return root
+        elif name_pattern.lower() == "whisper":
+            # Whisper unique markers
+            if "config.json" in files and any(f.endswith(('.bin', '.safetensors')) for f in files):
+                if "whisper" in root.lower() or "turbo" in root.lower():
+                    return root
     return None
 
 def get_tts_engine(model_path=None):
