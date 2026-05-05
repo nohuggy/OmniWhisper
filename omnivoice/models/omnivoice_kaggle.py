@@ -43,6 +43,19 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchaudio
 
+# Registry Patch for Custom Architectures
+# This allows loading the model even if the .py files are missing from the dataset
+try:
+    from transformers.models.auto.configuration_auto import CONFIG_MAPPING
+    from transformers import PretrainedConfig
+    if "higgs_audio_v2_tokenizer" not in CONFIG_MAPPING:
+        class HiggsAudioV2TokenizerConfig(PretrainedConfig):
+            model_type = "higgs_audio_v2_tokenizer"
+        CONFIG_MAPPING.register("higgs_audio_v2_tokenizer", HiggsAudioV2TokenizerConfig)
+        logger.info("Successfully registered 'higgs_audio_v2_tokenizer' to CONFIG_MAPPING")
+except Exception as e:
+    logger.warning("Failed to patch CONFIG_MAPPING: %s", e)
+
 # Optimization for CPU environments (like Lightning AI)
 # Prevents the AI from hogging all cores and getting stuck/killed
 torch.set_num_threads(4) 

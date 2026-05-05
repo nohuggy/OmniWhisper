@@ -79,9 +79,9 @@ from transformers import pipeline
 # ---------------------------------------------------------------------------
 # Global Engines
 # ---------------------------------------------------------------------------
-# 1. Define the LOCAL paths (Matching the screenshot)
-OMNI_LOCAL = "/kaggle/input/omniaudio/OmniVoice"
-WHISPER_LOCAL = "/kaggle/input/whisper_turbo/whisper-large-v3-turbo"
+# 1. Define the LOCAL paths (Matching the etallion nested structure)
+OMNI_LOCAL = "/kaggle/input/datasets/etallion/omniaudio/OmniVoice"
+WHISPER_LOCAL = "/kaggle/input/datasets/etallion/whisper_turbo/whisper-large-v3-turbo"
 
 TTS_ENGINE = None
 WHISPER_PIPE = None
