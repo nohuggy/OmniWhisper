@@ -343,8 +343,8 @@ class OmniVoice(PreTrainedModel):
 
                 if load_asr:
                     model.load_asr_model(model_name=asr_model_name)
-        finally:
-            logging.disable(_prev_disable)
+        except Exception as e:
+            raise e
 
         return model
 
