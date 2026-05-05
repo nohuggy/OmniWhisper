@@ -5,7 +5,7 @@ OmniWhisper is a production-grade **Text-to-Speech (TTS)** and **SRT Generation*
 ## 🚀 Installation & Launch
 
 ### 1. Google Colab
-Or run it in Google Colab: [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/nohuggy/OmniWhisper/blob/master/colab.ipynb)
+Run it in Google Colab: [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/nohuggy/OmniWhisper/blob/master/colab.ipynb)
 
 ### 2. Lightning.ai
 If this is your first time, clone the repository and run the setup script:
@@ -27,6 +27,3 @@ cd OmniWhisper && git pull && bash boot.sh
 ## 🛠️ Credits
 Powered by **OmniVoice** and **OpenAI Whisper**.
 Custom calibration logic by **nohuggy**.
-
----
-*Maintainer Note: Always preserve the dual-yield MP3/WAV strategy in app.py to avoid breaking the Gradio playback experience.*
