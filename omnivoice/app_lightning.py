@@ -32,7 +32,7 @@ def _patched_register_fake(name, fn=None, **kwargs):
             if _orig_register_fake: return _orig_register_fake(name, f, **kwargs)
             return f
         except Exception as e:
-            if "does not exist" in str(e):
+            if "does not exist" in str(e) or isinstance(e, AttributeError):
                 print(f"⚠️ [Monkeypatch] Skipping register_fake for non-existent op: {name}")
                 return f
             raise e
@@ -45,7 +45,7 @@ def _patched_register_autograd(name, fn=None, **kwargs):
             if _orig_register_autograd: return _orig_register_autograd(name, f, **kwargs)
             return f
         except Exception as e:
-            if "does not exist" in str(e):
+            if "does not exist" in str(e) or isinstance(e, AttributeError):
                 print(f"⚠️ [Monkeypatch] Skipping register_autograd for non-existent op: {name}")
                 return f
             raise e
