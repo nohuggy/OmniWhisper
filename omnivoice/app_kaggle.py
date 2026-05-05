@@ -725,6 +725,7 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
     5. Final synchronized yield of all result components.
     """
     from whisper_engine_kaggle import format_timestamp, unify_punctuation, smart_balanced_split, align_robust
+    from omnivoice.omni_engine_kaggle import TTSEngine, get_slug
     
     if not text or not text.strip():
         yield None, "", None, "Text is required."
