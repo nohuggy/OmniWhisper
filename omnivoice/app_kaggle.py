@@ -219,8 +219,8 @@ def get_whisper_pipe(whisper_path=None):
             model=whisper_path, 
             device=device, 
             torch_dtype=dtype,
-            chunk_length_s=30,  # Mandatory for Kaggle VRAM stability
-            batch_size=1        # Mandatory for Kaggle VRAM stability
+            chunk_length_s=30,
+            batch_size=1
         )
     return WHISPER_PIPE
 
