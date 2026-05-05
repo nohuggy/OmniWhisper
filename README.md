@@ -16,7 +16,7 @@ cd OmniWhisper && bash setup_lightning.sh
 
 To launch the server:
 ```bash
-cd OmniWhisper && git pull && bash boot.sh
+cd OmniWhisper && git pull && bash boot_lightning.sh
 ```
 
 ### 3. Kaggle

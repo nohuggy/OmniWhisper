@@ -46,5 +46,5 @@ $PYTHON_BIN -c "import torch; import transformers; print('✅ Environment check:
 echo ""
 echo "✅ OMNIWHISPER SETUP COMPLETE!"
 echo "------------------------------------------------"
-echo "To start: bash boot.sh"
+echo "To start: bash boot_lightning.sh"
 echo "------------------------------------------------"
