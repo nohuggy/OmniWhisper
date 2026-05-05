@@ -6,6 +6,13 @@ import tempfile
 import zipfile
 import torch
 import torch.library
+import gc
+
+# 🚀 CPU Optimization: Limit threads to prevent thrashing on shared hosts
+# This is critical for Lightning.ai Studios to prevent 10x slowdowns.
+if not torch.cuda.is_available():
+    torch.set_num_threads(4)
+    print("⚡ CPU Threads limited to 4 to prevent thrashing.")
 
 # 🚀 MONKEYPATCH: Fixes 'ValueError: infer_schema(func)' and 'RuntimeError: operator ... does not exist'
 # This happens with Transformers 5.x + Torch 2.4 + Python 3.12 due to string type hints.
@@ -150,8 +157,23 @@ def load_engines(model_path=None, whisper_path=None):
                 print("✅ Whisper Turbo: Ready (Fallback)")
             
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        WHISPER_PIPE = pipeline("automatic-speech-recognition", model=whisper_path, device=device)
+        dtype = torch.float32 if device == "cpu" else torch.float16
+        
+        print(f"📦 Loading Whisper Large V3 Turbo on {device.upper()}...")
+        WHISPER_PIPE = pipeline(
+            "automatic-speech-recognition", 
+            model=whisper_path, 
+            device=device,
+            torch_dtype=dtype,
+            chunk_length_s=30,
+            batch_size=1
+        )
         print(f"✅ Engines Initialized on {device.upper()}")
+        
+        # Clean up memory after heavy loads
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
         
         # Share the same pipe with the TTS engine to save ~1.6GB VRAM/RAM
         if TTS_ENGINE and hasattr(TTS_ENGINE.model, "_asr_pipe"):
