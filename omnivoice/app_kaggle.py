@@ -83,6 +83,9 @@ from transformers import pipeline
 OMNI_LOCAL = "./omnivoice/weights"
 WHISPER_LOCAL = "./whisper-large-v3-turbo/weights"
 
+TTS_ENGINE = None
+WHISPER_PIPE = None
+
 def get_tts_engine(model_path=None):
     global TTS_ENGINE
     if TTS_ENGINE is None:
