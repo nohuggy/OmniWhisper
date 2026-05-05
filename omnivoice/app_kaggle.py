@@ -214,7 +214,14 @@ def get_whisper_pipe(whisper_path=None):
         dtype = torch.float32 if device == "cpu" else torch.float16
         from transformers import pipeline
         # Use local_files_only=True for transformers pipeline
-        WHISPER_PIPE = pipeline("automatic-speech-recognition", model=whisper_path, device=device, torch_dtype=dtype)
+        WHISPER_PIPE = pipeline(
+            "automatic-speech-recognition", 
+            model=whisper_path, 
+            device=device, 
+            torch_dtype=dtype,
+            chunk_length_s=30,  # Mandatory for Kaggle VRAM stability
+            batch_size=1        # Mandatory for Kaggle VRAM stability
+        )
     return WHISPER_PIPE
 
 def unload_tts():
