@@ -1022,4 +1022,4 @@ if __name__ == "__main__":
     
     # Enable queueing for long-running tasks and progress bar visibility
     # This also handles the block_thread logic automatically
-    app.queue().launch(server_name="0.0.0.0", server_port=7860, share=args.share)
+    app.queue().launch(server_name="0.0.0.0", server_port=7860, share=True)
