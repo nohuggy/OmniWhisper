@@ -271,7 +271,8 @@ class OmniVoice(PreTrainedModel):
             # Resolve to local path first; download only if not already cached
             resolved_path = _resolve_model_path(pretrained_model_name_or_path)
 
-            kwargs["local_files_only"] = True
+            # Rely on resolved_path (which is local) instead of passing local_files_only
+            # to avoid keyword conflicts on Kaggle's transformers version.
             model = super().from_pretrained(resolved_path, *args, **kwargs)
 
             if not train_mode:
@@ -350,7 +351,9 @@ class OmniVoice(PreTrainedModel):
             model=model,
             tokenizer=processor.tokenizer,
             feature_extractor=processor.feature_extractor,
-            device=self.device
+            device=self.device,
+            batch_size=1,        # Mandatory for Kaggle VRAM stability
+            chunk_length_s=30    # Mandatory for Kaggle VRAM stability
         )
         logger.info("ASR model loaded on %s.", self.device)
 
