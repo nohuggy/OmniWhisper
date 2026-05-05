@@ -220,7 +220,8 @@ def get_whisper_pipe(whisper_path=None):
             device=device, 
             torch_dtype=dtype,
             chunk_length_s=30,
-            batch_size=1
+            batch_size=1,
+            local_files_only=True  # Force local use
         )
     return WHISPER_PIPE
 

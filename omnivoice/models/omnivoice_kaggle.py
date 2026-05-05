@@ -271,9 +271,14 @@ class OmniVoice(PreTrainedModel):
             # Resolve to local path first; download only if not already cached
             resolved_path = _resolve_model_path(pretrained_model_name_or_path)
 
-            # Rely on resolved_path (which is local) instead of passing local_files_only
-            # to avoid keyword conflicts on Kaggle's transformers version.
-            model = super().from_pretrained(resolved_path, *args, **kwargs)
+            # Force local loading and allow custom architecture files
+            model = super().from_pretrained(
+                resolved_path, 
+                *args, 
+                local_files_only=True, 
+                trust_remote_code=True, 
+                **kwargs
+            )
 
             if not train_mode:
                 model.text_tokenizer = AutoTokenizer.from_pretrained(resolved_path, local_files_only=True)
