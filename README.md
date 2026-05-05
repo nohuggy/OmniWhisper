@@ -98,6 +98,52 @@ export TRANSFORMERS_OFFLINE=1
 python omnivoice/app_kaggle.py
 ```
 
+#### Preparing Kaggle Datasets (One-time Setup)
+
+This is even easier because Whisper Large-v3-Turbo is a standard Transformers model. We will follow the same "Worker Notebook" pattern as before to ensure you get the directory structure exactly right.
+
+**Step 1: Create a New "Worker" Notebook**
+- Click **+ Create** -> **New Notebook**.
+- **Settings (Right Sidebar)**: Toggle **Internet on**.
+
+**Step 2: Run the Download Code**
+Paste and run this code. This will download the Turbo model weights from OpenAI's Hugging Face repo.
+
+```python
+import os
+from huggingface_hub import snapshot_download
+
+# 1. Define the model ID and destination
+repo_id = "openai/whisper-large-v3-turbo"
+local_dir = "/kaggle/working/whisper-large-v3-turbo"
+
+# 2. Download the repository
+print("Starting download of Whisper Turbo...")
+snapshot_download(repo_id=repo_id, local_dir=local_dir, local_dir_use_symlinks=False)
+
+print(f"Download complete! Files are in: {local_dir}")
+
+# 3. Verify files (You should see model.safetensors, config.json, etc.)
+!ls -R {local_dir}
+```
+
+**Step 3: Create the Permanent Dataset**
+Now, use the same trick as before to save this into your account:
+1. Click **"Save Version"** in the top right.
+2. Select **"Quick Save"**.
+3. Click **"Advanced Settings"** and make sure **"Always save output"** is checked.
+4. Click **Save**.
+5. Once the bar at the bottom says it is finished, click the **Version Number** (the "1") to view the output.
+6. Under the **Output** section, click **"Create Dataset"**.
+7. Name it something like `whisper-turbo-weights` and hit **Create**.
+
+**Step 4: Add Both to your Main Notebook**
+Now you are ready to build! Go to your Main OmniWhisper Notebook and attach both datasets:
+1. Click **+ Add Data**.
+2. Add your `omniaudio` dataset.
+3. Click **+ Add Data** again.
+4. Add your `whisper-turbo-weights` dataset.
+
 ## 🔧 Technical Notes
 - **Bracket-Aware Splitting**: The SRT alignment engine (`whisper_engine.py`) handles Chinese/English punctuation and brackets correctly to prevent orphaned marks at the start of lines.
 - **Gradio 5 UI Optimization**: The audio player uses a dual-format approach (MP3 for web streaming, WAV for processing) to ensure zero-latency loading. The UI generation is optimized to prevent redundant component reloads by maintaining a stable path yield.
