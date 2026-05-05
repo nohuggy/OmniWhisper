@@ -7,16 +7,16 @@ import zipfile
 import torch
 import torch.library
 
-# 🚀 MONKEYPATCH: Fixes 'ValueError: infer_schema(func)' crash with Transformers 5.x + Python 3.12
-# This happens because torch 2.4.x cannot resolve string type hints like 'torch.Tensor' 
-# which Transformers 5.x uses in its custom operators.
+# 🚀 MONKEYPATCH: Fixes 'ValueError: infer_schema(func)' and 'RuntimeError: operator ... does not exist'
+# This happens with Transformers 5.x + Torch 2.4 + Python 3.12 due to string type hints.
 _orig_custom_op = getattr(torch.library, "custom_op", None)
+_orig_register_fake = getattr(torch.library, "register_fake", None)
+_orig_register_autograd = getattr(torch.library, "register_autograd", None)
 
 def _patched_custom_op(name, fn=None, **kwargs):
     def decorator(f):
         try:
-            if _orig_custom_op:
-                return _orig_custom_op(name, f, **kwargs)
+            if _orig_custom_op: return _orig_custom_op(name, f, **kwargs)
             return f
         except Exception as e:
             if "infer_schema" in str(e):
@@ -26,8 +26,35 @@ def _patched_custom_op(name, fn=None, **kwargs):
     if fn is not None: return decorator(fn)
     return decorator
 
-if _orig_custom_op:
-    torch.library.custom_op = _patched_custom_op
+def _patched_register_fake(name, fn=None, **kwargs):
+    def decorator(f):
+        try:
+            if _orig_register_fake: return _orig_register_fake(name, f, **kwargs)
+            return f
+        except Exception as e:
+            if "does not exist" in str(e):
+                print(f"⚠️ [Monkeypatch] Skipping register_fake for non-existent op: {name}")
+                return f
+            raise e
+    if fn is not None: return decorator(fn)
+    return decorator
+
+def _patched_register_autograd(name, fn=None, **kwargs):
+    def decorator(f):
+        try:
+            if _orig_register_autograd: return _orig_register_autograd(name, f, **kwargs)
+            return f
+        except Exception as e:
+            if "does not exist" in str(e):
+                print(f"⚠️ [Monkeypatch] Skipping register_autograd for non-existent op: {name}")
+                return f
+            raise e
+    if fn is not None: return decorator(fn)
+    return decorator
+
+if _orig_custom_op: torch.library.custom_op = _patched_custom_op
+if _orig_register_fake: torch.library.register_fake = _patched_register_fake
+if _orig_register_autograd: torch.library.register_autograd = _patched_register_autograd
 
 import numpy as np
 import soundfile as sf
