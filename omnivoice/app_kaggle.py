@@ -222,7 +222,7 @@ def get_whisper_pipe(whisper_path=None):
         device = "cuda" if torch.cuda.is_available() else "cpu"
         dtype = torch.float32 if device == "cpu" else torch.float16
         from transformers import pipeline
-        # Use local_files_only=True for transformers pipeline
+        print(f"📦 Loading Whisper Large V3 Turbo on {device}...")
         WHISPER_PIPE = pipeline(
             "automatic-speech-recognition", 
             model=whisper_path, 
@@ -230,8 +230,9 @@ def get_whisper_pipe(whisper_path=None):
             torch_dtype=dtype,
             chunk_length_s=30,
             batch_size=1,
-            local_files_only=True  # Force local use
+            local_files_only=True
         )
+        print("✅ Whisper Engine Initialized Successfully.")
     return WHISPER_PIPE
 
 def unload_tts():

@@ -285,9 +285,7 @@ class OmniVoice(PreTrainedModel):
         asr_model_name = kwargs.pop("asr_model_name", "openai/whisper-large-v3-turbo")
         kwargs.pop("local_files_only", None)
 
-        # Suppress noisy INFO logs from transformers/huggingface_hub during loading
-        _prev_disable = logging.root.manager.disable
-        logging.disable(logging.INFO)
+        # Logging enabled for visibility during startup
 
         try:
             # Resolve to local path first; download only if not already cached
