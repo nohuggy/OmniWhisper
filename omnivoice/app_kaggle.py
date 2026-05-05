@@ -229,10 +229,9 @@ def get_whisper_pipe(whisper_path=None):
             device=device, 
             torch_dtype=dtype,
             chunk_length_s=30,
-            batch_size=1,
-            local_files_only=True
+            batch_size=1
         )
-        print("✅ Whisper Engine Initialized Successfully.")
+        print("✅ Whisper Engine Initialized Successfully.", flush=True)
     return WHISPER_PIPE
 
 def unload_tts():
