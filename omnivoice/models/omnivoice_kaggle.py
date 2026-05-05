@@ -271,7 +271,8 @@ class OmniVoice(PreTrainedModel):
             # Resolve to local path first; download only if not already cached
             resolved_path = _resolve_model_path(pretrained_model_name_or_path)
 
-            model = super().from_pretrained(resolved_path, *args, local_files_only=True, **kwargs)
+            kwargs["local_files_only"] = True
+            model = super().from_pretrained(resolved_path, *args, **kwargs)
 
             if not train_mode:
                 model.text_tokenizer = AutoTokenizer.from_pretrained(resolved_path, local_files_only=True)
