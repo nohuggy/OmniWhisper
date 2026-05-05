@@ -187,7 +187,7 @@ button.primary, button.secondary {
 .hidden-lyrics { display: none !important; }
 """
 
-_LYRICS_JS = """
+_LYRICS_JS = r"""
 () => {
     console.log('[Lyrics] Initializing Robust Polling Engine...');
     
