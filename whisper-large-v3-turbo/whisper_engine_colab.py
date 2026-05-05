@@ -38,7 +38,7 @@ def format_timestamp(seconds):
 # same line as its content.
 # ---------------------------------------------------------------------------
 
-def smart_balanced_split(text):
+def smart_balanced_split(text, target_words=12, max_words=17):
     if not text: return []
     # Split into paragraphs first to avoid remainder accumulation
     paragraphs = [p.strip() for p in text.split('\n') if p.strip()]
@@ -59,10 +59,10 @@ def smart_balanced_split(text):
         
         # Calculate segment budget
         # We use floor for a more conservative count to avoid orphans
-        num_segments = max(1, int(len(tokens) / 11))
+        num_segments = max(1, int(len(tokens) / target_words))
         
-        # If the average tokens per line would be too high (>15), add a segment
-        if len(tokens) / num_segments > 15:
+        # If the average tokens per line would be too high (>max_words), add a segment
+        if len(tokens) / num_segments > max_words:
             num_segments += 1
             
         avg_tokens = len(tokens) / num_segments

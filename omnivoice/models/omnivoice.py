@@ -58,6 +58,7 @@ from transformers import (
     AutoFeatureExtractor,
     AutoModel,
     AutoTokenizer,
+    HiggsAudioV2TokenizerModel,
     PretrainedConfig,
     PreTrainedModel,
 )
@@ -283,10 +284,8 @@ class OmniVoice(PreTrainedModel):
                 tokenizer_device = (
                     "cpu" if str(model.device).startswith("mps") else model.device
                 )
-                model.audio_tokenizer = AutoModel.from_pretrained(
-                    audio_tokenizer_path, 
-                    device_map=tokenizer_device,
-                    trust_remote_code=True
+                model.audio_tokenizer = HiggsAudioV2TokenizerModel.from_pretrained(
+                    audio_tokenizer_path, device_map=tokenizer_device
                 )
                 model.feature_extractor = AutoFeatureExtractor.from_pretrained(
                     audio_tokenizer_path

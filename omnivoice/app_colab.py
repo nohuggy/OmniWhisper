@@ -481,7 +481,7 @@ def optimize_audio_for_web(wav_path):
 # Core Logic
 # ---------------------------------------------------------------------------
 
-def text_to_srt_whisper(text, audio_tuple, pipe, language="zh", progress=None):
+def text_to_srt_whisper(text, audio_tuple, pipe, language="zh", target_words=12, max_words=17, progress=None):
     """Generate SRT using Whisper word-level timestamps via pipeline."""
     try:
         if progress: progress(0.1, desc="🔍 Aligning subtitles (Whisper)...")
@@ -508,8 +508,8 @@ def text_to_srt_whisper(text, audio_tuple, pipe, language="zh", progress=None):
         if torch.cuda.is_available():
             print(f"[SRT] VRAM After ASR: {torch.cuda.memory_allocated()/1e9:.2f}GB")
         
-        print(f"[SRT] Running smart_balanced_split on {len(text)} chars...")
-        segments = smart_balanced_split(text)
+        print(f"[SRT] Running smart_balanced_split on {len(text)} chars with max_words={max_words}...")
+        segments = smart_balanced_split(text, target_words=target_words, max_words=max_words)
         print(f"[SRT] Split into {len(segments)} segments.")
         
         # 1. Global Clock Reconstruction (Fixing the Whisper 30s Wall)
@@ -607,7 +607,7 @@ def text_to_srt_whisper(text, audio_tuple, pipe, language="zh", progress=None):
     except Exception as e:
         return f"SRT Error: {e}"
 
-def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guidance, denoise, speed, duration, pp, po, mode, gen_srt=True, convert_punc=True, progress=gr.Progress()):
+def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guidance, denoise, speed, duration, pp, po, mode, gen_srt=True, convert_punc=True, srt_max_words=17, progress=gr.Progress()):
     """
     Central orchestration loop for OmniVoice synthesis.
     Flow: 
@@ -707,7 +707,7 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
             asr_res = {"content": None, "error": None}
             def run_asr():
                 try:
-                    asr_res["content"] = text_to_srt_whisper(text, audio_tuple, pipe, progress=progress)
+                    asr_res["content"] = text_to_srt_whisper(text, audio_tuple, pipe, target_words=12, max_words=srt_max_words, progress=progress)
                 except Exception as e:
                     asr_res["error"] = str(e)
             
@@ -807,6 +807,7 @@ def build_app(model_path=None, whisper_path=None):
                             vc_dur = gr.Number(label="Fixed Duration (sec)", value=0)
                             vc_steps = gr.Slider(4, 64, value=32, step=4, label="Inference Steps")
                             vc_gs = gr.Slider(0, 5, value=3.0, step=0.1, label="Guidance Scale")
+                            vc_srt_max_words = gr.Slider(15, 22, value=17, step=1, label="SRT Max Word Per Line")
                             vc_dn = gr.Checkbox(label="Denoise", value=True)
                             vc_pp = gr.Checkbox(label="Clean Ref Audio (Silence Removal)", value=True)
                             vc_po = gr.Checkbox(label="Trim Output Silence", value=True)
@@ -848,6 +849,7 @@ def build_app(model_path=None, whisper_path=None):
                             vd_dur = gr.Number(label="Fixed Duration (sec)", value=0)
                             vd_steps = gr.Slider(4, 64, value=32, step=4, label="Inference Steps")
                             vd_gs = gr.Slider(0, 5, value=3.0, step=0.1, label="Guidance Scale")
+                            vd_srt_max_words = gr.Slider(15, 22, value=17, step=1, label="SRT Max Word Per Line")
                             vd_dn = gr.Checkbox(label="Denoise", value=True)
                             vd_po = gr.Checkbox(label="Trim Output Silence", value=True)
                             vd_gen_srt = gr.Checkbox(label="Generate Subtitles (SRT)", value=True)
@@ -903,7 +905,7 @@ def build_app(model_path=None, whisper_path=None):
                 yield f"Error: {e}"
 
         def vc_handler(
-            text, lang, ref, ref_text, instruct, steps, gs, dn, punc, speed, dur, pp, po, gen_srt,
+            text, lang, ref, ref_text, instruct, steps, gs, srt_max_words, dn, punc, speed, dur, pp, po, gen_srt,
             progress: gr.Progress = gr.Progress()
         ):
             if progress: progress(0, desc="🚀 Initializing...")
@@ -912,6 +914,7 @@ def build_app(model_path=None, whisper_path=None):
                 instruct=instruct, num_step=steps, guidance=gs, denoise=dn, 
                 convert_punc=punc, speed=speed, duration=dur, 
                 pp=pp, po=po, mode="clone", gen_srt=gen_srt,
+                srt_max_words=srt_max_words,
                 progress=progress
             ):
                 yield res
@@ -967,7 +970,7 @@ def build_app(model_path=None, whisper_path=None):
             outputs=[vc_btn, vc_transcribe_btn, vc_dl, vc_status]
         ).then(
             vc_handler,
-            inputs=[vc_text, vc_lang, vc_ref, vc_ref_text, vc_instruct, vc_steps, vc_gs, vc_dn, vc_punc, vc_speed, vc_dur, vc_pp, vc_po, vc_gen_srt],
+            inputs=[vc_text, vc_lang, vc_ref, vc_ref_text, vc_instruct, vc_steps, vc_gs, vc_srt_max_words, vc_dn, vc_punc, vc_speed, vc_dur, vc_pp, vc_po, vc_gen_srt],
             outputs=[vc_audio, vc_srt, vc_dl, vc_status]
         ).then(
             lambda dl: (gr.update(interactive=True), gr.update(interactive=True), gr.update(visible=bool(dl))), 
@@ -977,17 +980,17 @@ def build_app(model_path=None, whisper_path=None):
 
 
         def vd_handler(
-            text, lang, speed, dur, steps, gs, dn, punc, po, gen_srt, g1, g2, g3, g4, g5, g6,
+            text, lang, speed, dur, steps, gs, srt_max_words, dn, punc, po, gen_srt, g1, g2, g3, g4, g5, g6,
             progress: gr.Progress = gr.Progress()
         ):
             if progress: progress(0, desc="🚀 Designing Voice...")
             instruct = ", ".join([g for g in [g1, g2, g3, g4, g5, g6] if g != "Auto"])
-            for res in generate_core(text, lang, None, None, instruct, steps, gs, dn, speed, dur, False, po, "design", gen_srt, punc, progress=progress):
+            for res in generate_core(text, lang, None, None, instruct, steps, gs, dn, speed, dur, False, po, "design", gen_srt, punc, srt_max_words=srt_max_words, progress=progress):
                 yield res
 
         vd_btn.click(
             vd_handler,
-            inputs=[vd_text, vd_lang, vd_speed, vd_dur, vd_steps, vd_gs, vd_dn, vd_punc, vd_po, vd_gen_srt] + vd_groups,
+            inputs=[vd_text, vd_lang, vd_speed, vd_dur, vd_steps, vd_gs, vd_srt_max_words, vd_dn, vd_punc, vd_po, vd_gen_srt] + vd_groups,
             outputs=[vd_audio, vd_srt, vd_dl, vd_status]
         ).then(lambda dl: gr.update(visible=bool(dl)), inputs=[vd_dl], outputs=[vd_dl])
 
