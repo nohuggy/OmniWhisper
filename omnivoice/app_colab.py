@@ -6,6 +6,10 @@ import tempfile
 import zipfile
 import torch
 import numpy as np
+
+# 🚀 CPU Optimization: Limit threads to prevent thrashing
+if not torch.cuda.is_available():
+    torch.set_num_threads(4)
 import soundfile as sf
 import gradio as gr
 import warnings
@@ -124,7 +128,18 @@ def get_whisper_pipe(whisper_path=None):
         device = "cuda" if torch.cuda.is_available() else "cpu"
         dtype = torch.float32 if device == "cpu" else torch.float16
         from transformers import pipeline
-        WHISPER_PIPE = pipeline("automatic-speech-recognition", model=whisper_path, device=device, torch_dtype=dtype)
+        
+        # 🚀 Optimized Pipeline Settings
+        kwargs = {
+            "model": whisper_path,
+            "device": device,
+            "torch_dtype": dtype
+        }
+        if device == "cpu":
+            kwargs["chunk_length_s"] = 30
+            kwargs["batch_size"] = 1
+            
+        WHISPER_PIPE = pipeline("automatic-speech-recognition", **kwargs)
     return WHISPER_PIPE
 
 def unload_tts():
