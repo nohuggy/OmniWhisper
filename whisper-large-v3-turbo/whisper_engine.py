@@ -57,43 +57,47 @@ def smart_balanced_split(text):
         
         if not tokens: continue
         
-        num_segments = max(1, round(len(tokens) / 11))
-        # If the remainder would be too big, add another segment
-        if len(tokens) / num_segments > 14:
+        # Calculate segment budget
+        # We use floor for a more conservative count to avoid orphans
+        num_segments = max(1, int(len(tokens) / 11))
+        
+        # If the average tokens per line would be too high (>15), add a segment
+        if len(tokens) / num_segments > 15:
             num_segments += 1
             
         avg_tokens = len(tokens) / num_segments
         start_idx = 0
         for i in range(num_segments):
+            # LAST SEGMENT HANDLING
             if i == num_segments - 1:
                 final_tokens = tokens[start_idx:]
-                if len(final_tokens) > 15:
-                    # Smart split the remainder instead of a naked mid-cut
-                    mid = len(final_tokens) // 2
-                    best_m = mid
-                    min_p_m = 1000
-                    for offset in range(-5, 6):
-                        idx_m = mid + offset
-                        if idx_m <= 0 or idx_m >= len(final_tokens): continue
-                        t_m = final_tokens[idx_m - 1]
-                        p_m = abs(offset) * 3
-                        if any(x in t_m for x in "。！？.!?;；…"): p_m -= 30
-                        elif any(x in t_m for x in "，,"): p_m -= 15
-                        else: p_m += 40
-                        if p_m < min_p_m: min_p_m = p_m; best_m = idx_m
-                    
-                    all_segments.append("".join(final_tokens[:best_m]).strip())
-                    all_segments.append("".join(final_tokens[best_m:]).strip())
-                else:
-                    all_segments.append("".join(final_tokens).strip())
+                # If we have a previous segment and this one is an "orphan" (very short),
+                # we should have merged it. But since we are here, just add it.
+                # The look-ahead below usually prevents this.
+                all_segments.append("".join(final_tokens).strip())
                 break
                 
             ideal_end = start_idx + int(avg_tokens)
+            
+            # ORPHAN PREVENTION: Look ahead to see if splitting here leaves too few tokens
+            # If remaining tokens < 5, just merge everything into this segment and finish.
+            remaining_after_ideal = len(tokens) - ideal_end
+            if remaining_after_ideal < 5 and i == num_segments - 2:
+                all_segments.append("".join(tokens[start_idx:]).strip())
+                break
+
             best_break = ideal_end
             min_p = 1000
+            # Window search for best punctuation
             for offset in range(-5, 6):
                 idx = ideal_end + offset
                 if idx <= start_idx or idx >= len(tokens): continue
+                
+                # Critical: Don't break if it leaves an orphan (< 5 tokens) for the NEXT line
+                # unless it's the very last segment calculation
+                if (len(tokens) - idx) < 5 and i < num_segments - 1:
+                    continue
+
                 t = tokens[idx - 1]
                 p = abs(offset) * 3
                 if any(x in t for x in "。！？.!?;；…"): p -= 30
