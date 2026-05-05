@@ -54,10 +54,9 @@ fi
 echo "📦 Checking dependencies..."
 
 # 6. Launch the WebUI
-echo "🌐 Launching WebUI (Kaggle Edition)..."
+echo "🌐 Launching WebUI..."
 # Ensure current directory is in PYTHONPATH for module resolution
 export PYTHONPATH=$PYTHONPATH:.
-export PYTHONUNBUFFERED=1
 
-# Use app_kaggle.py for Kaggle stability
-python3 -u omnivoice/app_kaggle.py --share
+# We point to the local folder for the model
+python3 omnivoice/app.py --model "./omnivoice/resources" --whisper "$WHISPER_DIR" --share
