@@ -204,9 +204,19 @@ def run_production_pipeline(input_dir, output_dir, model_path):
     
     os.makedirs(output_dir, exist_ok=True)
     
-    # Load model once
-    print(f"Loading Whisper model from: {model_path}")
-    pipe = pipeline("automatic-speech-recognition", model=model_path, device="cpu")
+    # Load model once with Auto-Device detection
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    dtype = torch.float16 if device == "cuda" else torch.float32
+    print(f"Loading Whisper model on [{device}] from: {model_path}")
+    
+    pipe = pipeline(
+        "automatic-speech-recognition", 
+        model=model_path, 
+        device=device, 
+        torch_dtype=dtype,
+        chunk_length_s=30,  # Mandatory for Kaggle VRAM stability
+        batch_size=1        # Mandatory for Kaggle VRAM stability
+    )
 
     # Find all .wav files in the input directory
     wav_files = glob.glob(os.path.join(input_dir, "*.wav"))
