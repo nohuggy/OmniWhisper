@@ -122,8 +122,9 @@ def get_whisper_pipe(whisper_path=None):
                 os.system(f"git clone https://huggingface.co/openai/whisper-large-v3-turbo {whisper_path}_tmp && mv {whisper_path}_tmp/* {whisper_path}/ && rm -rf {whisper_path}_tmp")
 
         device = "cuda" if torch.cuda.is_available() else "cpu"
+        dtype = torch.float32 if device == "cpu" else torch.float16
         from transformers import pipeline
-        WHISPER_PIPE = pipeline("automatic-speech-recognition", model=whisper_path, device=device)
+        WHISPER_PIPE = pipeline("automatic-speech-recognition", model=whisper_path, device=device, torch_dtype=dtype)
     return WHISPER_PIPE
 
 def unload_tts():
