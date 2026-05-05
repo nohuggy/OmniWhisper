@@ -281,7 +281,11 @@ class OmniVoice(PreTrainedModel):
             )
 
             if not train_mode:
-                model.text_tokenizer = AutoTokenizer.from_pretrained(resolved_path, local_files_only=True)
+                model.text_tokenizer = AutoTokenizer.from_pretrained(
+                    resolved_path, 
+                    local_files_only=True, 
+                    trust_remote_code=True
+                )
 
                 audio_tokenizer_path = os.path.join(resolved_path, "audio_tokenizer")
 
@@ -297,7 +301,10 @@ class OmniVoice(PreTrainedModel):
                 )
                 if HiggsAudioV2TokenizerModel is not None:
                     model.audio_tokenizer = HiggsAudioV2TokenizerModel.from_pretrained(
-                        audio_tokenizer_path, device_map=tokenizer_device, local_files_only=True
+                        audio_tokenizer_path, 
+                        device_map=tokenizer_device, 
+                        local_files_only=True,
+                        trust_remote_code=True
                     )
                 else:
                     logger.warning("HiggsAudioV2TokenizerModel not found in transformers, falling back to AutoModel (trust_remote_code=True)")
@@ -305,7 +312,9 @@ class OmniVoice(PreTrainedModel):
                         audio_tokenizer_path, device_map=tokenizer_device, trust_remote_code=True, local_files_only=True
                     )
                 model.feature_extractor = AutoFeatureExtractor.from_pretrained(
-                    audio_tokenizer_path, local_files_only=True
+                    audio_tokenizer_path, 
+                    local_files_only=True,
+                    trust_remote_code=True
                 )
 
                 model.sampling_rate = model.feature_extractor.sampling_rate
