@@ -91,16 +91,30 @@ def find_kaggle_dataset(name_pattern):
     if not os.path.exists("/kaggle/input"):
         return None
     import glob
-    # Search for directories that might contain our models
-    for path in glob.glob("/kaggle/input/*"):
+    print(f"🔎 Searching for '{name_pattern}' in /kaggle/input...")
+    
+    # List everything found for debugging
+    all_inputs = glob.glob("/kaggle/input/*")
+    print(f"📂 Found in /kaggle/input: {[os.path.basename(p) for p in all_inputs]}")
+    
+    # Expand patterns: "OmniVoice" -> check for "omni", "audio", "voice"
+    patterns = [name_pattern.lower()]
+    if name_pattern.lower() == "omnivoice":
+        patterns.extend(["omni", "audio", "voice"])
+    elif name_pattern.lower() == "whisper":
+        patterns.extend(["turbo", "large-v3"])
+
+    for path in all_inputs:
         if os.path.isdir(path):
-            # Check if the name matches or contains the pattern
-            if name_pattern.lower() in path.lower():
+            base = os.path.basename(path).lower()
+            if any(p in base for p in patterns):
                 return path
-            # Also check subfolders one level deep (standard Kaggle structure)
+            # Check subfolders (Kaggle often nests them)
             for sub in glob.glob(os.path.join(path, "*")):
-                if os.path.isdir(sub) and name_pattern.lower() in os.path.basename(sub).lower():
-                    return sub
+                if os.path.isdir(sub):
+                    sub_base = os.path.basename(sub).lower()
+                    if any(p in sub_base for p in patterns):
+                        return sub
     return None
 
 def get_tts_engine(model_path=None):
