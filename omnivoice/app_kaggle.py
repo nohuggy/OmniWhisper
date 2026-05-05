@@ -590,6 +590,7 @@ def optimize_audio_for_web(wav_path):
 
 def text_to_srt_whisper(text, audio_tuple, pipe, language="zh", progress=None):
     """Generate SRT using Whisper word-level timestamps via pipeline."""
+    from whisper_engine_kaggle import format_timestamp, smart_balanced_split
     try:
         if progress: progress(0.1, desc="🔍 Aligning subtitles (Whisper)...")
         sr, waveform = audio_tuple
