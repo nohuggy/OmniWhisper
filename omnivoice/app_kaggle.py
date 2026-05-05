@@ -87,38 +87,42 @@ TTS_ENGINE = None
 WHISPER_PIPE = None
 
 def find_kaggle_dataset(name_pattern):
-    """Deep scan /kaggle/input for folders containing model weights."""
+    """X-Ray scan /kaggle/input for ANY large model files."""
     if not os.path.exists("/kaggle/input"):
+        print("⚠️ /kaggle/input does not exist!")
         return None
-    import glob
-    print(f"🔎 Deep-scanning /kaggle/input for '{name_pattern}'...")
     
-    # 1. First, check if any folder name matches (fast path)
-    all_inputs = glob.glob("/kaggle/input/*")
-    for path in all_inputs:
-        if os.path.isdir(path):
-            if name_pattern.lower() in os.path.basename(path).lower():
-                return path
-
-    # 2. Deep scan: look for specific files that identify the model
-    # For OmniVoice, we look for 'audio_tokenizer' folder or 'model.safetensors'
-    # For Whisper, we look for 'config.json' and 'model.safetensors'
+    import glob
+    print(f"🔎 X-RAY SCANNING /kaggle/input for '{name_pattern}'...")
+    
+    # 1. Full Tree Print (Helpful for debugging)
+    print("📂 Directory Structure of /kaggle/input:")
     for root, dirs, files in os.walk("/kaggle/input"):
-        # Don't go too deep to save time
-        if root.count(os.sep) > 5: continue
-        
-        dirname = os.path.basename(root).lower()
-        
-        if name_pattern.lower() == "omnivoice":
-            # OmniVoice unique markers
-            if "audio_tokenizer" in dirs or "omnivoice" in dirname or "omniaudio" in dirname:
-                if any(f.endswith(('.bin', '.safetensors')) for f in files):
-                    return root
-        elif name_pattern.lower() == "whisper":
-            # Whisper unique markers
-            if "config.json" in files and any(f.endswith(('.bin', '.safetensors')) for f in files):
-                if "whisper" in root.lower() or "turbo" in root.lower():
-                    return root
+        if root.count(os.sep) > 4: continue
+        indent = "  " * (root.count(os.sep) - 2)
+        print(f"{indent}📁 {os.path.basename(root)}/ ({len(files)} files)")
+
+    # 2. Search by Large File Content
+    # Models are always >100MB. We search for any large files and identify the folder.
+    for root, dirs, files in os.walk("/kaggle/input"):
+        for f in files:
+            fpath = os.path.join(root, f)
+            try:
+                # If we find a file > 100MB, check if it belongs to the requested model
+                if os.path.getsize(fpath) > 100 * 1024 * 1024:
+                    # Logic to distinguish OmniVoice from Whisper
+                    if name_pattern.lower() == "omnivoice":
+                        # OmniVoice usually has a tokenizer neighbor or 'omni' in path
+                        if "audio_tokenizer" in root or "omni" in root.lower() or "audio" in root.lower():
+                            print(f"🎯 Found OmniVoice candidate: {root} (via {f})")
+                            return root
+                    elif name_pattern.lower() == "whisper":
+                        # Whisper has 'whisper' or 'turbo' in path
+                        if "whisper" in root.lower() or "turbo" in root.lower() or "config.json" in files:
+                            print(f"🎯 Found Whisper candidate: {root} (via {f})")
+                            return root
+            except: continue
+            
     return None
 
 def get_tts_engine(model_path=None):
