@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import sys
-import os, sys, time
+import os, sys, time, re
 print("⚡️ SCRIPT STARTING: I am alive!", flush=True)
 import logging
 import zipfile
