@@ -214,7 +214,7 @@ def get_whisper_pipe(whisper_path=None):
         dtype = torch.float32 if device == "cpu" else torch.float16
         from transformers import pipeline
         # Use local_files_only=True for transformers pipeline
-        WHISPER_PIPE = pipeline("automatic-speech-recognition", model=whisper_path, device=device, torch_dtype=dtype, model_kwargs={"local_files_only": True})
+        WHISPER_PIPE = pipeline("automatic-speech-recognition", model=whisper_path, device=device, torch_dtype=dtype, local_files_only=True)
     return WHISPER_PIPE
 
 def unload_tts():
