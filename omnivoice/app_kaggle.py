@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 import sys
-import os
-import re
-import tempfile
+import os, sys, time
+print("⚡️ SCRIPT STARTING: I am alive!", flush=True)
+import logging
 import zipfile
 import torch
 import numpy as np
@@ -72,9 +72,7 @@ for p in [project_root, os.path.dirname(os.path.abspath(__file__)), os.path.join
     if p not in sys.path:
         sys.path.append(p)
 
-from omnivoice.omni_engine_kaggle import TTSEngine, get_slug
-from whisper_engine_kaggle import format_timestamp, unify_punctuation, smart_balanced_split, align_robust
-from transformers import pipeline
+# Heavy imports moved inside functions for faster startup
 
 # ---------------------------------------------------------------------------
 # Global Engines
@@ -93,10 +91,10 @@ def find_kaggle_dataset(name_pattern):
         return None
     
     import glob
-    print(f"🔎 X-RAY SCANNING /kaggle/input for '{name_pattern}'...")
+    print(f"🔎 X-RAY SCANNING /kaggle/input for '{name_pattern}'...", flush=True)
     
     # 1. Full Tree Print (Helpful for debugging)
-    print("📂 Directory Structure of /kaggle/input:")
+    print("📂 Directory Structure of /kaggle/input:", flush=True)
     for root, dirs, files in os.walk("/kaggle/input"):
         if root.count(os.sep) > 6: continue # Increased depth
         indent = "  " * (root.count(os.sep) - 2)
@@ -171,8 +169,10 @@ def get_tts_engine(model_path=None):
                 snapshot_download(repo_id="k2-fsa/OmniVoice", local_dir=model_path, local_files_only=True)
             except: pass
 
+        from omnivoice.omni_engine_kaggle import TTSEngine
         device = "cuda" if torch.cuda.is_available() else "cpu"
         dtype = torch.float32 if device == "cpu" else torch.float16
+        print(f"Initializing OmniVoice TTS Engine on {device} ({dtype})...", flush=True)
         TTS_ENGINE = TTSEngine(model_path, device=device, dtype=dtype)
     return TTS_ENGINE
 
