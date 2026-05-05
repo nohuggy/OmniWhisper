@@ -261,6 +261,7 @@ class OmniVoice(PreTrainedModel):
         train_mode = kwargs.pop("train", False)
         load_asr = kwargs.pop("load_asr", False)
         asr_model_name = kwargs.pop("asr_model_name", "openai/whisper-large-v3-turbo")
+        kwargs.pop("local_files_only", None)
 
         # Suppress noisy INFO logs from transformers/huggingface_hub during loading
         _prev_disable = logging.root.manager.disable
