@@ -170,7 +170,7 @@ def get_tts_engine(model_path=None):
             except: pass
 
         from omnivoice.omni_engine_kaggle import TTSEngine
-        num_gpus = torch.cuda.device_count()
+        num_gpus = torch.cuda.device_count() if torch.cuda.is_available() else 0
         device = "cuda:0" if num_gpus > 0 else "cpu"
         dtype = torch.float32 if device == "cpu" else torch.float16
         print(f"Initializing OmniVoice TTS Engine on {device} ({dtype})...", flush=True)
@@ -220,8 +220,9 @@ def get_whisper_pipe(whisper_path=None):
                 snapshot_download(repo_id='openai/whisper-large-v3-turbo', local_dir=whisper_path, local_files_only=True)
             except: pass
 
-        num_gpus = torch.cuda.device_count()
-        device = "cuda:1" if num_gpus > 1 else ("cuda:0" if num_gpus > 0 else "cpu")
+        num_gpus = torch.cuda.device_count() if torch.cuda.is_available() else 0
+        # If 2 GPUs, use cuda:1 for Whisper. Otherwise use cuda:0 or cpu.
+        device = "cuda:1" if num_gpus >= 2 else ("cuda:0" if num_gpus == 1 else "cpu")
         dtype = torch.float32 if device == "cpu" else torch.float16
         from transformers import pipeline
         print(f"📦 Loading Whisper Large V3 Turbo on {device}...", flush=True)
@@ -233,7 +234,7 @@ def get_whisper_pipe(whisper_path=None):
             chunk_length_s=30,
             batch_size=1
         )
-        print(f"✅ Whisper Engine Initialized on {device}.", flush=True)
+        print("✅ Whisper Engine Initialized Successfully.", flush=True)
     return WHISPER_PIPE
 
 def unload_tts():
