@@ -10,10 +10,14 @@ import torch.library
 # 🚀 MONKEYPATCH: Fixes 'ValueError: infer_schema(func)' crash with Transformers 5.x + Python 3.12
 # This happens because torch 2.4.x cannot resolve string type hints like 'torch.Tensor' 
 # which Transformers 5.x uses in its custom operators.
+_orig_custom_op = getattr(torch.library, "custom_op", None)
+
 def _patched_custom_op(name, fn=None, **kwargs):
     def decorator(f):
         try:
-            return torch.library.custom_op(name, f, **kwargs)
+            if _orig_custom_op:
+                return _orig_custom_op(name, f, **kwargs)
+            return f
         except Exception as e:
             if "infer_schema" in str(e):
                 print(f"⚠️ [Monkeypatch] Bypassing custom_op error for {name}: {e}")
@@ -22,7 +26,7 @@ def _patched_custom_op(name, fn=None, **kwargs):
     if fn is not None: return decorator(fn)
     return decorator
 
-if hasattr(torch.library, "custom_op"):
+if _orig_custom_op:
     torch.library.custom_op = _patched_custom_op
 
 import numpy as np
