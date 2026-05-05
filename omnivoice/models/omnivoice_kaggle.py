@@ -52,9 +52,9 @@ try:
         class HiggsAudioV2TokenizerConfig(PretrainedConfig):
             model_type = "higgs_audio_v2_tokenizer"
         CONFIG_MAPPING.register("higgs_audio_v2_tokenizer", HiggsAudioV2TokenizerConfig)
-        logger.info("Successfully registered 'higgs_audio_v2_tokenizer' to CONFIG_MAPPING")
+        print("Successfully registered 'higgs_audio_v2_tokenizer' to CONFIG_MAPPING")
 except Exception as e:
-    logger.warning("Failed to patch CONFIG_MAPPING: %s", e)
+    print(f"Failed to patch CONFIG_MAPPING: {e}")
 
 # Optimization for CPU environments (like Lightning AI)
 # Prevents the AI from hogging all cores and getting stuck/killed
