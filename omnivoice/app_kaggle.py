@@ -86,25 +86,70 @@ WHISPER_LOCAL = "./whisper-large-v3-turbo/weights"
 TTS_ENGINE = None
 WHISPER_PIPE = None
 
+def find_kaggle_dataset(name_pattern):
+    """Try to find a dataset folder in /kaggle/input that matches the pattern."""
+    if not os.path.exists("/kaggle/input"):
+        return None
+    import glob
+    # Search for directories that might contain our models
+    for path in glob.glob("/kaggle/input/*"):
+        if os.path.isdir(path):
+            # Check if the name matches or contains the pattern
+            if name_pattern.lower() in path.lower():
+                return path
+            # Also check subfolders one level deep (standard Kaggle structure)
+            for sub in glob.glob(os.path.join(path, "*")):
+                if os.path.isdir(sub) and name_pattern.lower() in os.path.basename(sub).lower():
+                    return sub
+    return None
+
 def get_tts_engine(model_path=None):
     global TTS_ENGINE
     if TTS_ENGINE is None:
         if model_path is None:
             model_path = OMNI_LOCAL
             
-        # Ensure model directory exists and has weights
-        has_weights = os.path.exists(model_path) and any(f.endswith(('.bin', '.safetensors')) for f in os.listdir(model_path))
+        # 🛠️ KAGGLE ROBUSTNESS: Clean up broken symlinks that block downloads
+        if os.path.islink(model_path) and not os.path.exists(model_path):
+            print(f"🗑️ Removing broken symlink at {model_path}...")
+            os.unlink(model_path)
+
+        # 🛠️ AUTO-DISCOVERY: If path doesn't exist, try to find it in /kaggle/input
+        if not os.path.exists(model_path):
+            discovered = find_kaggle_dataset("OmniVoice")
+            if discovered:
+                print(f"🔍 Auto-discovered OmniVoice dataset at: {discovered}")
+                # Create a fresh symlink if possible, or just use the path
+                try:
+                    os.makedirs(os.path.dirname(model_path), exist_ok=True)
+                    os.symlink(discovered, model_path)
+                except:
+                    model_path = discovered
+
+        # Ensure model directory exists and has weights (check subfolders too)
+        has_weights = False
+        if os.path.exists(model_path) and os.path.isdir(model_path):
+            for root, _, files in os.walk(model_path):
+                if any(f.endswith(('.bin', '.safetensors')) for f in files):
+                    model_path = root # Found the actual weights folder
+                    has_weights = True
+                    break
+                if root.count(os.sep) - model_path.count(os.sep) >= 1: break # Don't go too deep
+
         if not has_weights:
             print(f"📥 Downloading OmniVoice Weights (~1.5GB) to {model_path}...")
             from huggingface_hub import snapshot_download
             try:
+                os.makedirs(model_path, exist_ok=True)
                 snapshot_download(repo_id="k2-fsa/OmniVoice", local_dir=model_path, local_dir_use_symlinks=False)
             except Exception as e:
                 print(f"⚠️ Download failed: {e}. Trying git fallback...")
-                os.system(f"git clone https://huggingface.co/k2-fsa/OmniVoice {model_path}_tmp && mv {model_path}_tmp/* {model_path}/ && rm -rf {model_path}_tmp")
+                tmp_dir = f"{model_path}_tmp"
+                os.system(f"git clone --depth 1 https://huggingface.co/k2-fsa/OmniVoice {tmp_dir}")
+                os.system(f"cp -r {tmp_dir}/* {model_path}/ && rm -rf {tmp_dir}")
         else:
             print(f"✅ OmniVoice models found in {model_path}. Skipping download.")
-            # Still call snapshot_download with local_files_only=True to ensure everything is linked correctly if needed
+            # Verify with snapshot_download (offline mode)
             from huggingface_hub import snapshot_download
             try:
                 snapshot_download(repo_id="k2-fsa/OmniVoice", local_dir=model_path, local_files_only=True)
@@ -120,17 +165,44 @@ def get_whisper_pipe(whisper_path=None):
     if WHISPER_PIPE is None:
         if whisper_path is None:
             whisper_path = WHISPER_LOCAL
+
+        # 🛠️ KAGGLE ROBUSTNESS: Clean up broken symlinks
+        if os.path.islink(whisper_path) and not os.path.exists(whisper_path):
+            print(f"🗑️ Removing broken symlink at {whisper_path}...")
+            os.unlink(whisper_path)
+
+        # 🛠️ AUTO-DISCOVERY
+        if not os.path.exists(whisper_path):
+            discovered = find_kaggle_dataset("whisper-large-v3-turbo")
+            if discovered:
+                print(f"🔍 Auto-discovered Whisper dataset at: {discovered}")
+                try:
+                    os.makedirs(os.path.dirname(whisper_path), exist_ok=True)
+                    os.symlink(discovered, whisper_path)
+                except:
+                    whisper_path = discovered
             
         # Ensure whisper directory exists and has weights
-        has_whisper = os.path.exists(whisper_path) and any(f.endswith(('.bin', '.safetensors', '.pt')) for f in os.listdir(whisper_path) if os.path.isfile(os.path.join(whisper_path, f)))
+        has_whisper = False
+        if os.path.exists(whisper_path) and os.path.isdir(whisper_path):
+            for root, _, files in os.walk(whisper_path):
+                if any(f.endswith(('.bin', '.safetensors', '.pt')) for f in files):
+                    whisper_path = root
+                    has_whisper = True
+                    break
+                if root.count(os.sep) - whisper_path.count(os.sep) >= 1: break
+
         if not has_whisper:
             print(f"📥 Downloading Whisper Turbo (~1.6GB) to {whisper_path}...")
             from huggingface_hub import snapshot_download
             try:
+                os.makedirs(whisper_path, exist_ok=True)
                 snapshot_download(repo_id='openai/whisper-large-v3-turbo', local_dir=whisper_path, local_dir_use_symlinks=False)
             except Exception as e:
                 print(f"⚠️ Download failed: {e}. Trying git fallback...")
-                os.system(f"git clone https://huggingface.co/openai/whisper-large-v3-turbo {whisper_path}_tmp && mv {whisper_path}_tmp/* {whisper_path}/ && rm -rf {whisper_path}_tmp")
+                tmp_dir = f"{whisper_path}_tmp"
+                os.system(f"git clone --depth 1 https://huggingface.co/openai/whisper-large-v3-turbo {tmp_dir}")
+                os.system(f"cp -r {tmp_dir}/* {whisper_path}/ && rm -rf {tmp_dir}")
         else:
             print(f"✅ Whisper Turbo models found in {whisper_path}. Skipping download.")
             from huggingface_hub import snapshot_download
