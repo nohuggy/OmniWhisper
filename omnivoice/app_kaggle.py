@@ -1067,7 +1067,12 @@ def build_app(model_path=None, whisper_path=None):
         )
             
         # Transcription events (Manual only)
-        vc_transcribe_btn.click(transcribe_ref, inputs=[vc_ref], outputs=[vc_ref_text])
+        vc_transcribe_btn.click(
+            transcribe_ref, 
+            inputs=[vc_ref], 
+            outputs=[vc_ref_text],
+            show_progress="minimal"
+        )
 
         vc_btn.click(
             lambda: (gr.update(interactive=False), gr.update(interactive=False), gr.update(visible=False), "⏳ Initializing..."),
