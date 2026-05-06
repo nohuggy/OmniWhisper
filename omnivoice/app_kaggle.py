@@ -8,10 +8,11 @@ import torch
 import gc
 
 # 🚀 CPU Optimization: Limit threads to prevent thrashing on shared hosts
-# This is critical for cloud platforms (Kaggle/Lightning) to prevent slowdowns.
+# [SPEC]: Kaggle Notebooks provide 4 vCPUs. 
+# [METHOD]: Hard-limit to 4 threads to ensure optimal utilization without overhead.
 if not torch.cuda.is_available():
     torch.set_num_threads(4)
-    print("⚡ CPU Threads limited to 4 to prevent thrashing.")
+    print("⚡ CPU Threads limited to 4 to prevent thrashing (Kaggle 4-core spec).")
 import numpy as np
 import soundfile as sf
 import gradio as gr

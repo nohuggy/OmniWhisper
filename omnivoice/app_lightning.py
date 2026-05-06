@@ -9,10 +9,12 @@ import torch.library
 import gc
 
 # 🚀 CPU Optimization: Limit threads to prevent thrashing on shared hosts
-# This is critical for Lightning.ai Studios to prevent 10x slowdowns.
+# [SPEC]: Lightning.ai Studios typically provide 4 vCPUs. 
+# [METHOD]: Hard-limit to 4 threads to prevent PyTorch from spawning 64+ threads 
+# on the host machine which causes massive context-switching overhead.
 if not torch.cuda.is_available():
     torch.set_num_threads(4)
-    print("⚡ CPU Threads limited to 4 to prevent thrashing.")
+    print("⚡ CPU Threads limited to 4 to prevent thrashing (Lightning.ai 4-core spec).")
 
 # 🚀 MONKEYPATCH: Fixes 'ValueError: infer_schema(func)' and 'RuntimeError: operator ... does not exist'
 # This happens with Transformers 5.x + Torch 2.4 + Python 3.12 due to string type hints.

@@ -4,11 +4,6 @@ import torch
 import torchaudio
 import numpy as np
 import re
-import gc
-
-# 🚀 CPU Optimization: Limit threads to prevent thrashing on shared hosts
-if not torch.cuda.is_available():
-    torch.set_num_threads(2)
 from transformers import pipeline
 import difflib
 
