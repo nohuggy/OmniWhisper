@@ -132,6 +132,9 @@ Resolved the **"X-Ray Path"** issue where models were hidden deep within Kaggle'
 - **Bracket-Aware Splitting**: The SRT alignment engine (`whisper_engine.py`) handles Chinese/English punctuation and brackets correctly to prevent orphaned marks at the start of lines.
 - **Gradio 5 UI Optimization**: The audio player uses a dual-format approach (MP3 for web streaming, WAV for processing) to ensure zero-latency loading. The UI generation is optimized to prevent redundant component reloads by maintaining a stable path yield.
 - **Auto-Revert Lyric Mode**: The web interface automatically switches between dynamic lyric mode and static SRT text mode when the audio player is paused or stopped using a motion-aware JS scraper.
+- **Platform-Specific CPU Scaling**: To prevent "Thread Thrashing" (10x slowdowns on cloud CPUs), the engine now enforces core-specific threading limits:
+  - **Lightning.ai & Kaggle**: Locked to 4 cores to match vCPU allocation.
+  - **Google Colab**: Locked to 2 cores to match free/pro tier constraints.
 
 ## 🛠️ Credits
 Powered by **OmniVoice** and **OpenAI Whisper**.

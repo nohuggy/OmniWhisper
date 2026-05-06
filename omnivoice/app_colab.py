@@ -5,6 +5,14 @@ import re
 import tempfile
 import zipfile
 import torch
+import gc
+
+# 🚀 CPU Optimization: Limit threads to prevent thrashing on shared hosts
+# Colab free/pro tier typically provides 2 CPU cores.
+if not torch.cuda.is_available():
+    torch.set_num_threads(2)
+    print("⚡ CPU Threads limited to 2 to prevent thrashing (Colab optimized).")
+
 import numpy as np
 import soundfile as sf
 import gradio as gr
