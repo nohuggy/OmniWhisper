@@ -210,7 +210,6 @@ def run_production_pipeline(input_dir, output_dir, model_path):
         model=model_path, 
         device=device, 
         torch_dtype=dtype,
-        low_cpu_mem_usage=True,
         chunk_length_s=30,  # Mandatory for Kaggle VRAM stability
         batch_size=1        # Mandatory for Kaggle VRAM stability
     )

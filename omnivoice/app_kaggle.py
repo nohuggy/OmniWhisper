@@ -236,7 +236,6 @@ def get_whisper_pipe(whisper_path=None):
             "model": whisper_path,
             "device": device,
             "torch_dtype": dtype,
-            "low_cpu_mem_usage": True,
             "chunk_length_s": 30,
             "batch_size": 1
         }

@@ -204,7 +204,7 @@ def run_production_pipeline(input_dir, output_dir, model_path):
     print(f"Loading Whisper model from: {model_path}")
     device = "cuda" if torch.cuda.is_available() else "cpu"
     dtype = torch.float32 if device == "cpu" else torch.float16
-    pipe = pipeline("automatic-speech-recognition", model=model_path, device=device, torch_dtype=dtype, low_cpu_mem_usage=True)
+    pipe = pipeline("automatic-speech-recognition", model=model_path, device=device, torch_dtype=dtype)
 
     # Find all .wav files in the input directory
     wav_files = glob.glob(os.path.join(input_dir, "*.wav"))

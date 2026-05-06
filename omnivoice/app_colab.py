@@ -133,8 +133,7 @@ def get_whisper_pipe(whisper_path=None):
         kwargs = {
             "model": whisper_path,
             "device": device,
-            "torch_dtype": dtype,
-            "low_cpu_mem_usage": True
+            "torch_dtype": dtype
         }
         if device == "cpu":
             kwargs["chunk_length_s"] = 30
