@@ -4,11 +4,6 @@ import torch
 import torchaudio
 import numpy as np
 import re
-import gc
-
-# 🚀 CPU Optimization: Limit threads to prevent thrashing
-if not torch.cuda.is_available():
-    torch.set_num_threads(4)
 from transformers import pipeline
 import difflib
 
@@ -202,9 +197,7 @@ def run_production_pipeline(input_dir, output_dir, model_path):
     
     # Load model once
     print(f"Loading Whisper model from: {model_path}")
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    dtype = torch.float32 if device == "cpu" else torch.float16
-    pipe = pipeline("automatic-speech-recognition", model=model_path, device=device, torch_dtype=dtype)
+    pipe = pipeline("automatic-speech-recognition", model=model_path, device="cpu")
 
     # Find all .wav files in the input directory
     wav_files = glob.glob(os.path.join(input_dir, "*.wav"))

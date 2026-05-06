@@ -160,15 +160,14 @@ def load_engines(model_path=None, whisper_path=None):
         dtype = torch.float32 if device == "cpu" else torch.float16
         
         print(f"📦 Loading Whisper Large V3 Turbo on {device.upper()}...")
-        with torch.inference_mode():
-            WHISPER_PIPE = pipeline(
-                "automatic-speech-recognition", 
-                model=whisper_path, 
-                device=device,
-                torch_dtype=dtype,
-                chunk_length_s=30,
-                batch_size=1
-            )
+        WHISPER_PIPE = pipeline(
+            "automatic-speech-recognition", 
+            model=whisper_path, 
+            device=device,
+            torch_dtype=dtype,
+            chunk_length_s=30,
+            batch_size=1
+        )
         print(f"✅ Engines Initialized on {device.upper()}")
         
         # Clean up memory after heavy loads
@@ -265,33 +264,23 @@ _LYRICS_JS = r"""
 () => {
     console.log('[Lyrics] Initializing Robust Polling Engine...');
     
-    function parseTimestamp(s) {
-        if (!s) return 0;
-        var p = s.replace(',','.').split(':');
-        if (p.length === 3) return parseInt(p[0])*3600 + parseInt(p[1])*60 + parseFloat(p[2]);
-        return parseFloat(p[p.length-1]);
-    }
-
-    function parseSRT(data) {
-        if (!data) return [];
-        var res = [];
-        var blocks = data.trim().split(/\n\s*\n/);
-        blocks.forEach(function(block) {
-            try {
-                var lines = block.split('\n');
-                if (lines.length >= 3) {
-                    var timeMatch = lines[1].match(/(\d+:\d+:\d+,\d+)\s*-->\s*(\d+:\d+:\d+,\d+)/);
-                    if (timeMatch) {
-                        res.push({
-                            start: parseTimestamp(timeMatch[1]),
-                            end: parseTimestamp(timeMatch[2]),
-                            text: lines.slice(2).join(' ')
-                        });
-                    }
-                }
-            } catch(e) { console.error("SRT Parse Error", e); }
-        });
-        return res;
+    function parseSRT(raw) {
+        if (!raw) return [];
+        var blocks = raw.trim().split(/\\n\\n+/);
+        var cues = [];
+        for (var b = 0; b < blocks.length; b++) {
+            var lines = blocks[b].split('\\n');
+            if (lines.length < 3) continue;
+            var times = lines[1].split(' --> ');
+            if (times.length !== 2) continue;
+            var s = times[0].replace(',','.').split(':');
+            var e = times[1].replace(',','.').split(':');
+            var startSec = parseFloat(s[0])*3600 + parseFloat(s[1])*60 + parseFloat(s[2]);
+            var endSec   = parseFloat(e[0])*3600 + parseFloat(e[1])*60 + parseFloat(e[2]);
+            var txt = lines.slice(2).join(' ');
+            cues.push({start: startSec, end: endSec, text: txt});
+        }
+        return cues;
     }
 
     function renderLyrics(viewer, cues, activeIdx) {
@@ -637,36 +626,11 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
         # 4. SRT Generation
         srt_content = ""
         if gen_srt:
-            # 🚀 Threaded ASR for Status Timer
-            # Run Whisper in a thread so we can keep yielding heartbeats to the browser
-            import threading
-            asr_res = {"content": None, "error": None}
-            def run_asr():
-                try:
-                    with torch.inference_mode():
-                        asr_res["content"] = text_to_srt_whisper(text, audio_tuple, WHISPER_PIPE, srt_max_words=srt_max_words)
-                except Exception as e:
-                    asr_res["error"] = str(e)
-            
-            thread = threading.Thread(target=run_asr)
-            thread.start()
-            
-            dot_count = 0
-            while thread.is_alive():
-                dot_count = (dot_count + 1) % 4
-                dots = "." * dot_count
-                elapsed_now = int(time.time() - start_time)
-                # CRITICAL FIX: To prevent the "Triple Reload" bug, yield audio_path constantly
-                yield audio_path, gr.update(), None, f"⏳ ASR Alignment in progress ({elapsed_now}s)... {dots}"
-                time.sleep(0.8)
-            
-            thread.join()
-            if asr_res["error"]:
-                srt_content = f"SRT Error: {asr_res['error']}"
-            else:
-                srt_content = asr_res["content"]
-            
-            yield audio_path, srt_content, None, "⏳ ASR Complete. Packaging ZIP..."
+            # CRITICAL FIX: To prevent the "Triple Reload" bug (where the audio player resets 3 times),
+            # we MUST yield the optimized MP3 path (audio_path) immediately after TTS.
+            # This allows the player to load ONCE and stay loaded during the ASR phase.
+            yield audio_path, "", None, f"⏳ TTS Done ({duration_s:.1f}s). Running ASR for alignment..."
+            srt_content = text_to_srt_whisper(text, audio_tuple, WHISPER_PIPE, srt_max_words=srt_max_words)
         
         # 4. Final Result Preparation
         # Keep audio_path as the MP3 for the UI yield to prevent reloads,

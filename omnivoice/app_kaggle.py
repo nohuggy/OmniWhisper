@@ -5,11 +5,14 @@ print("⚡️ SCRIPT STARTING: I am alive!", flush=True)
 import logging
 import zipfile
 import torch
-import numpy as np
+import gc
 
-# 🚀 CPU Optimization: Limit threads to prevent thrashing
+# 🚀 CPU Optimization: Limit threads to prevent thrashing on shared hosts
+# This is critical for cloud platforms (Kaggle/Lightning) to prevent slowdowns.
 if not torch.cuda.is_available():
     torch.set_num_threads(4)
+    print("⚡ CPU Threads limited to 4 to prevent thrashing.")
+import numpy as np
 import soundfile as sf
 import gradio as gr
 import warnings
@@ -179,6 +182,12 @@ def get_tts_engine(model_path=None):
         dtype = torch.float32 if device == "cpu" else torch.float16
         print(f"Initializing OmniVoice TTS Engine on {device} ({dtype})...", flush=True)
         TTS_ENGINE = TTSEngine(model_path, device=device, dtype=dtype)
+        
+        # Clean up memory after heavy loads
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            
     return TTS_ENGINE
 
 def get_whisper_pipe(whisper_path=None):
@@ -230,17 +239,14 @@ def get_whisper_pipe(whisper_path=None):
         dtype = torch.float32 if device == "cpu" else torch.float16
         from transformers import pipeline
         print(f"📦 Loading Whisper Large V3 Turbo on {device}...", flush=True)
-        
-        # 🚀 Optimized Pipeline Settings
-        kwargs = {
-            "model": whisper_path,
-            "device": device,
-            "torch_dtype": dtype,
-            "chunk_length_s": 30,
-            "batch_size": 1
-        }
-        
-        WHISPER_PIPE = pipeline("automatic-speech-recognition", **kwargs)
+        WHISPER_PIPE = pipeline(
+            "automatic-speech-recognition", 
+            model=whisper_path, 
+            device=device, 
+            torch_dtype=dtype,
+            chunk_length_s=30,
+            batch_size=1
+        )
         print("✅ Whisper Engine Initialized Successfully.", flush=True)
     return WHISPER_PIPE
 
@@ -614,13 +620,12 @@ def text_to_srt_whisper(text, audio_tuple, pipe, srt_max_words=17, language="zh"
         if torch.cuda.is_available():
             print(f"[SRT] VRAM Before ASR: {torch.cuda.memory_allocated()/1e9:.2f}GB")
             
-        with torch.inference_mode():
-            result = pipe(
-                {"sampling_rate": sr, "raw": waveform_f32}, 
-                chunk_length_s=30, 
-                batch_size=1, 
-                return_timestamps="word"
-            )
+        result = pipe(
+            {"sampling_rate": sr, "raw": waveform_f32}, 
+            chunk_length_s=30, 
+            batch_size=1, 
+            return_timestamps="word"
+        )
         
         chunks = result.get("chunks", [])
         print(f"[SRT] Whisper inference complete. Got {len(chunks)} word chunks.")

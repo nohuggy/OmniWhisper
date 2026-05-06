@@ -6,7 +6,7 @@ import numpy as np
 import re
 import gc
 
-# 🚀 CPU Optimization: Limit threads to prevent thrashing
+# 🚀 CPU Optimization: Limit threads to prevent thrashing on shared hosts
 if not torch.cuda.is_available():
     torch.set_num_threads(4)
 from transformers import pipeline
@@ -202,8 +202,8 @@ def run_production_pipeline(input_dir, output_dir, model_path):
     
     # Load model once with Auto-Device detection
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    dtype = torch.float32 if device == "cpu" else torch.float16
-    print(f"Loading Whisper model from: {model_path}")
+    dtype = torch.float16 if device == "cuda" else torch.float32
+    print(f"Loading Whisper model on [{device}] from: {model_path}")
     
     pipe = pipeline(
         "automatic-speech-recognition", 
