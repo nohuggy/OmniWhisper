@@ -124,7 +124,13 @@ Resolved the **"X-Ray Path"** issue where models were hidden deep within Kaggle'
 - **The Problem:** `%%bash` in Kaggle cells buffers all output until the process ends, hiding logs from web servers.
 - **The Fix:** Replaced with `!` commands and added `sys.stdout.flush()` to all Python logs. You now see the `⚡️ SCRIPT STARTING` heartbeat instantly.
 
-### 4. Scope & Import Integrity
+### 4. CPU Performance & Thread Optimizations (10x Speedup)
+- **Thrashing Prevention**: Implemented `torch.set_num_threads(4)` across all platforms (Lightning, Colab, Kaggle). This prevents PyTorch from spawning 64+ threads on shared host machines, which was causing extreme slowdowns (10 mins for 6s audio).
+- **Pipeline Alignment**: Synchronized CPU pipeline settings (`chunk_length_s=30`, `batch_size=1`, `torch_dtype=float32`) to ensure consistent sub-30s transcription performance.
+- **Robust Lyric Viewer**: Replaced the Javascript SRT parser with a "Pro" version that handles varied line endings and spacing, resolving the "no subtitles loaded" message.
+- **Real-time Status Timer**: Refactored ASR alignment to run in a background thread, enabling a live "elapsed time" counter in the WebUI status panel.
+
+### 5. Scope & Import Integrity
 - **NameError Prevention:** All heavy dependencies (Transformers, OmniEngine) are now localized within their specific execution functions. This allows for a fast 1-second startup while ensuring that tools like `unify_punctuation` and `get_slug` are available at runtime.
 - **`re` Restoration:** Re-implemented missing regex imports that were causing SRT processing crashes.
 
