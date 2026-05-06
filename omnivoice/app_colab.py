@@ -17,6 +17,14 @@ import warnings
 import time
 import subprocess
 import shutil
+import gc
+import traceback
+
+# 🚀 CPU Optimization: Google Colab typically provides 2 vCPUs.
+# This prevents the kernel from hanging/crashing due to thread over-subscription.
+if not torch.cuda.is_available():
+    torch.set_num_threads(2)
+    print("⚡ CPU Threads limited to 2 to prevent kernel crashes (Colab spec).")
 # Suppress annoying warnings for a cleaner "pro" boot
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -714,7 +722,10 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
                 try:
                     asr_res["content"] = text_to_srt_whisper(text, audio_tuple, pipe, target_words=12, max_words=srt_max_words, progress=progress)
                 except Exception as e:
-                    asr_res["error"] = str(e)
+                    import traceback
+                    error_trace = traceback.format_exc()
+                    print(f"❌ ASR Alignment CRASHED:\n{error_trace}")
+                    asr_res["error"] = f"{str(e)}\n\nTraceback:\n{error_trace}"
             
             thread = threading.Thread(target=run_asr)
             thread.start()
