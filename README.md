@@ -130,7 +130,7 @@ Resolved the **"X-Ray Path"** issue where models were hidden deep within Kaggle'
 
 ## 🔧 Technical Notes
 - **Multi-Platform CPU Optimization**: 
-    - **Lightning.ai (4 Cores)**: Hard-limited to 4 threads to prevent thrashing on shared host machines (10x speedup).
+    - **Lightning.ai (4 Cores)**: Hard-limited to 4 threads to prevent thrashing on shared host machines.
     - **Kaggle (4 Cores)**: Synchronized with Lightning settings for consistent 4-core CPU performance.
     - **Google Colab (2 Cores)**: Optimized for 2-core environments; relies on radical VRAM unloading for Whisper Word-alignment stability.
 - **Bracket-Aware Splitting**: The SRT alignment engine (`whisper_engine.py`) handles Chinese/English punctuation and brackets correctly to prevent orphaned marks at the start of lines.

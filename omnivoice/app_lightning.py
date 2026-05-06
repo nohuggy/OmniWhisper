@@ -235,10 +235,13 @@ button.primary, button.secondary {
 .lyrics-viewer {
     height: 260px;
     width: 100% !important;
-    overflow-y: auto;
+    overflow-y: auto !important;
     padding: 10px 20px !important;
     box-sizing: border-box;
     display: none;
+    background: #111;
+    color: #fff;
+    border-radius: 12px;
 }
 .lyric-line {
     text-align: center;
@@ -266,23 +269,33 @@ _LYRICS_JS = r"""
 () => {
     console.log('[Lyrics] Initializing Robust Polling Engine...');
     
-    function parseSRT(raw) {
-        if (!raw) return [];
-        var blocks = raw.trim().split(/\\n\\n+/);
-        var cues = [];
-        for (var b = 0; b < blocks.length; b++) {
-            var lines = blocks[b].split('\\n');
-            if (lines.length < 3) continue;
-            var times = lines[1].split(' --> ');
-            if (times.length !== 2) continue;
-            var s = times[0].replace(',','.').split(':');
-            var e = times[1].replace(',','.').split(':');
-            var startSec = parseFloat(s[0])*3600 + parseFloat(s[1])*60 + parseFloat(s[2]);
-            var endSec   = parseFloat(e[0])*3600 + parseFloat(e[1])*60 + parseFloat(e[2]);
-            var txt = lines.slice(2).join(' ');
-            cues.push({start: startSec, end: endSec, text: txt});
-        }
-        return cues;
+    function parseTimestamp(s) {
+        if (!s) return 0;
+        var p = s.replace(',','.').split(':');
+        if (p.length === 3) return parseInt(p[0])*3600 + parseInt(p[1])*60 + parseFloat(p[2]);
+        return parseFloat(p[p.length-1]);
+    }
+
+    function parseSRT(data) {
+        if (!data) return [];
+        var res = [];
+        var blocks = data.trim().split(/\n\s*\n/);
+        blocks.forEach(function(block) {
+            try {
+                var lines = block.split('\n');
+                if (lines.length >= 3) {
+                    var timeMatch = lines[1].match(/(\d+:\d+:\d+,\d+)\s*-->\s*(\d+:\d+:\d+,\d+)/);
+                    if (timeMatch) {
+                        res.push({
+                            start: parseTimestamp(timeMatch[1]),
+                            end: parseTimestamp(timeMatch[2]),
+                            text: lines.slice(2).join(' ')
+                        });
+                    }
+                }
+            } catch(e) { console.error("SRT Parse Error", e); }
+        });
+        return res;
     }
 
     function renderLyrics(viewer, cues, activeIdx) {
@@ -343,92 +356,115 @@ _LYRICS_JS = r"""
     }
 
     function updateLyrics() {
-        PAIRS.forEach(function(pair) {
-            var audioId = pair[0], lyricsId = pair[1], srtBoxId = pair[2];
-            var audioContainer = document.getElementById(audioId);
-            var viewer = document.getElementById(lyricsId);
-            var rawBox = document.getElementById(srtBoxId);
-            if (!audioContainer || !viewer || !rawBox) return;
+        try {
+            PAIRS.forEach(function(pair) {
+                var audioId = pair[0], lyricsId = pair[1], srtBoxId = pair[2];
+                var audioContainer = document.getElementById(audioId);
+                var viewer = document.getElementById(lyricsId);
+                var rawBox = document.getElementById(srtBoxId);
+                if (!audioContainer || !viewer || !rawBox) return;
 
-            var currentTime = -1;
+                var currentTime = -1;
 
-            // 1. Check for audio element in container (including shadow DOM)
-            var internalAudios = audioContainer.querySelectorAll('audio');
-            if (internalAudios.length === 0 && audioContainer.shadowRoot) {
-                internalAudios = audioContainer.shadowRoot.querySelectorAll('audio');
-            }
-            // Step 0: Robust Pause detection for standard players
-            var primaryAudio = internalAudios[0];
-            if (primaryAudio && primaryAudio.paused) {
-                currentTime = -1; // Force hide
-            } else {
-                for (var i = 0; i < internalAudios.length; i++) {
-                    if (!internalAudios[i].paused && internalAudios[i].currentTime > 0) {
-                        currentTime = internalAudios[i].currentTime;
-                        break;
-                    }
+                // 1. Check for audio element in container
+                var internalAudios = audioContainer.querySelectorAll('audio');
+                if (internalAudios.length === 0 && audioContainer.shadowRoot) {
+                    internalAudios = audioContainer.shadowRoot.querySelectorAll('audio');
                 }
-
-                // 2. Global fallback (Any playing audio on page)
-                if (currentTime < 0) {
-                    var allAudios = document.querySelectorAll('audio');
-                    for (var j = 0; j < allAudios.length; j++) {
-                        if (!allAudios[j].paused && allAudios[j].currentTime > 0) {
-                            currentTime = allAudios[j].currentTime;
+                
+                var primaryAudio = internalAudios[0];
+                if (primaryAudio && primaryAudio.paused) {
+                    currentTime = -1; 
+                } else {
+                    for (var i = 0; i < internalAudios.length; i++) {
+                        if (!internalAudios[i].paused && internalAudios[i].currentTime > 0) {
+                            currentTime = internalAudios[i].currentTime;
                             break;
                         }
                     }
-                }
-            }
-
-            // 3. UI Scraper (Gradio 5 Waveform) - Only active if moving
-            if (currentTime < 0) {
-                var txt = audioContainer.innerText || "";
-                var matches = txt.match(/(\d+:\d+)/g);
-                if (matches) {
-                    // Prefer the first match which is usually the current time
-                    var p = parseTimeStr(matches[0]); 
-                    if (p > 0.05) {
-                        if (p !== viewer._lastP) { 
-                            viewer._lastP = p; 
-                            viewer._lastT = Date.now(); 
-                        }
-                        // Only active if the time has changed in the last 1000ms
-                        if (Date.now() - (viewer._lastT || 0) < 1000) { 
-                            currentTime = p; 
+                    if (currentTime < 0) {
+                        var allAudios = document.querySelectorAll('audio');
+                        for (var j = 0; j < allAudios.length; j++) {
+                            if (!allAudios[j].paused && allAudios[j].currentTime > 0) {
+                                currentTime = allAudios[j].currentTime;
+                                break;
+                            }
                         }
                     }
                 }
-            }
 
-            if (currentTime >= 0) {
-                var srtVal = getSRT(srtBoxId);
-                if (viewer.style.display === 'none' || viewer._lastSRT !== srtVal) {
-                    rawBox.style.display = 'none';
-                    viewer.style.display = 'block';
-                    viewer._cues = parseSRT(srtVal);
-                    viewer._lastSRT = srtVal;
-                    viewer._cueCount = -1;
+                // 2. UI Scraper Fallback
+                if (currentTime < 0) {
+                    var txt = audioContainer.innerText || "";
+                    var matches = txt.match(/(\d+:\d+)/g);
+                    if (matches) {
+                        var p = parseTimeStr(matches[0]); 
+                        if (p > 0.05) {
+                            if (p !== viewer._lastP) { 
+                                viewer._lastP = p; 
+                                viewer._lastT = Date.now(); 
+                            }
+                            if (Date.now() - (viewer._lastT || 0) < 3000) { 
+                                currentTime = p; 
+                            }
+                        }
+                    }
                 }
-                var cues = viewer._cues || [];
-                var activeIdx = -1;
-                for (var k = 0; k < cues.length; k++) {
-                    if (currentTime >= cues[k].start && currentTime < cues[k].end) { activeIdx = k; break; }
+
+                // 3. Consistency Filter (Anti-Jump)
+                var now = Date.now();
+                var dt = (now - (viewer._lastTick || now)) / 1000;
+                viewer._lastTick = now;
+
+                if (currentTime >= 0 && viewer._lastSafeTime >= 0) {
+                    var delta = Math.abs(currentTime - (viewer._lastSafeTime + dt));
+                    if (delta > 2.0) {
+                        if (viewer._jumpTime !== currentTime) {
+                            viewer._jumpTime = currentTime;
+                            viewer._jumpCount = 1;
+                            currentTime = viewer._lastSafeTime + dt;
+                        } else {
+                            viewer._jumpCount++;
+                            if (viewer._jumpCount < 4) {
+                                currentTime = viewer._lastSafeTime + dt;
+                            } else {
+                                viewer._lastSafeTime = currentTime;
+                            }
+                        }
+                    } else {
+                        viewer._lastSafeTime = currentTime;
+                        viewer._jumpCount = 0;
+                    }
+                } else if (currentTime >= 0) {
+                    viewer._lastSafeTime = currentTime;
                 }
-                renderLyrics(viewer, cues, activeIdx);
-            } else {
-                if (viewer.style.display !== 'none') {
-                    viewer.style.display = 'none';
-                    rawBox.style.display = 'block';
+
+                if (currentTime >= 0) {
+                    viewer._modeFailCount = 0;
+                    var srtVal = getSRT(srtBoxId);
+                    if (viewer.style.display === 'none' || viewer._lastSRT !== srtVal) {
+                        rawBox.style.display = 'none';
+                        viewer.style.display = 'block';
+                        viewer._cues = parseSRT(srtVal);
+                        viewer._lastSRT = srtVal;
+                        viewer._cueCount = -1;
+                    }
+                    var cues = viewer._cues || [];
+                    var activeIdx = -1;
+                    for (var k = 0; k < cues.length; k++) {
+                        if (currentTime >= cues[k].start && currentTime < cues[k].end) { activeIdx = k; break; }
+                    }
+                    renderLyrics(viewer, cues, activeIdx);
+                } else {
+                    viewer._lastSafeTime = -1;
+                    viewer._modeFailCount = (viewer._modeFailCount || 0) + 1;
+                    if (viewer._modeFailCount >= 3 && viewer.style.display !== 'none') {
+                        viewer.style.display = 'none';
+                        rawBox.style.display = 'block';
+                    }
                 }
-            }
-            
-            // 4. Audio Engine Optimization: Force browser to buffer more aggressively
-            var audios = audioContainer.querySelectorAll('audio');
-            for (var i = 0; i < audios.length; i++) {
-                if (audios[i].preload !== 'auto') audios[i].preload = 'auto';
-            }
-        });
+            });
+        } catch(e) { console.warn("Polling Engine Recovered", e); }
     }
 
     setInterval(updateLyrics, 200);
