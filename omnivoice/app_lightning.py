@@ -160,14 +160,16 @@ def load_engines(model_path=None, whisper_path=None):
         dtype = torch.float32 if device == "cpu" else torch.float16
         
         print(f"📦 Loading Whisper Large V3 Turbo on {device.upper()}...")
-        WHISPER_PIPE = pipeline(
-            "automatic-speech-recognition", 
-            model=whisper_path, 
-            device=device,
-            torch_dtype=dtype,
-            chunk_length_s=30,
-            batch_size=1
-        )
+        with torch.inference_mode():
+            WHISPER_PIPE = pipeline(
+                "automatic-speech-recognition", 
+                model=whisper_path, 
+                device=device,
+                torch_dtype=dtype,
+                low_cpu_mem_usage=True,
+                chunk_length_s=30,
+                batch_size=1
+            )
         print(f"✅ Engines Initialized on {device.upper()}")
         
         # Clean up memory after heavy loads
@@ -642,7 +644,8 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
             asr_res = {"content": None, "error": None}
             def run_asr():
                 try:
-                    asr_res["content"] = text_to_srt_whisper(text, audio_tuple, WHISPER_PIPE, srt_max_words=srt_max_words)
+                    with torch.inference_mode():
+                        asr_res["content"] = text_to_srt_whisper(text, audio_tuple, WHISPER_PIPE, srt_max_words=srt_max_words)
                 except Exception as e:
                     asr_res["error"] = str(e)
             

@@ -236,6 +236,7 @@ def get_whisper_pipe(whisper_path=None):
             "model": whisper_path,
             "device": device,
             "torch_dtype": dtype,
+            "low_cpu_mem_usage": True,
             "chunk_length_s": 30,
             "batch_size": 1
         }
@@ -614,12 +615,13 @@ def text_to_srt_whisper(text, audio_tuple, pipe, srt_max_words=17, language="zh"
         if torch.cuda.is_available():
             print(f"[SRT] VRAM Before ASR: {torch.cuda.memory_allocated()/1e9:.2f}GB")
             
-        result = pipe(
-            {"sampling_rate": sr, "raw": waveform_f32}, 
-            chunk_length_s=30, 
-            batch_size=1, 
-            return_timestamps="word"
-        )
+        with torch.inference_mode():
+            result = pipe(
+                {"sampling_rate": sr, "raw": waveform_f32}, 
+                chunk_length_s=30, 
+                batch_size=1, 
+                return_timestamps="word"
+            )
         
         chunks = result.get("chunks", [])
         print(f"[SRT] Whisper inference complete. Got {len(chunks)} word chunks.")
