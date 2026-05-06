@@ -10,6 +10,11 @@ import numpy as np
 # 🚀 CPU Optimization: Limit threads to prevent thrashing
 if not torch.cuda.is_available():
     torch.set_num_threads(4)
+    torch.set_num_interop_threads(1)
+    try:
+        torch.set_flush_denormal(True)
+    except: pass
+    print("⚡ CPU Math Optimizations enabled (Flush Denormal + Interop Threads).")
 import soundfile as sf
 import gradio as gr
 import warnings

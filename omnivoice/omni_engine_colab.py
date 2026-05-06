@@ -95,7 +95,8 @@ class TTSEngine:
                 kw["duration"] = float(duration) * (len(chunk) / len(text))
             if instruct and instruct.strip(): kw["instruct"] = instruct.strip()
 
-            audio = self.model.generate(**kw)
+            with torch.inference_mode():
+                audio = self.model.generate(**kw)
             chunk_wave = (audio[0] * 32767).astype(np.int16).squeeze()
             full_waveform.append(chunk_wave)
 
