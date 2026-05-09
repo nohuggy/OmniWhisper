@@ -793,11 +793,12 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
                 z.write(srt_path, arcname=f"{slug}.srt")
                 
                 # Debug: Include raw transcription
-                if asr_res.get("raw"):
+                if asr_res.get("raw") is not None:
                     raw_txt_path = f"outputs/{unique_slug}_raw.txt"
                     with open(raw_txt_path, "w", encoding="utf-8") as rf:
                         rf.write(asr_res["raw"])
                     z.write(raw_txt_path, arcname=f"debug_raw_transcription.txt")
+                    print(f"DEBUG: Added debug_raw_transcription.txt to ZIP ({len(asr_res['raw'])} chars)")
         
         elapsed = time.time() - start_time
         tokens = len(text.strip())
