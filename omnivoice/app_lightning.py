@@ -489,7 +489,7 @@ def optimize_audio_for_web(wav_path):
 # Core Logic
 # ---------------------------------------------------------------------------
 
-def text_to_srt_whisper(text, audio_tuple, pipe, srt_max_words=17, language="zh"):
+def text_to_srt_whisper(text, audio_tuple, pipe, srt_max_words=17, language="zh", asr_prompt=""):
     """Generate SRT using Whisper word-level timestamps via pipeline."""
     try:
         sr, waveform = audio_tuple
@@ -497,7 +497,22 @@ def text_to_srt_whisper(text, audio_tuple, pipe, srt_max_words=17, language="zh"
         waveform_f32 = waveform.astype(np.float32) / 32767.0
         
         # Whisper pipeline expects a dict or numpy array
-        result = pipe({"sampling_rate": sr, "raw": waveform_f32}, return_timestamps="word")
+        gen_kwargs = {}
+        if language and language != "Auto":
+            gen_kwargs["language"] = language
+            
+        if asr_prompt and asr_prompt.strip():
+            # We use the pipeline's tokenizer to get prompt_ids
+            gen_kwargs["language"] = None 
+            try:
+                prompt_ids = pipe.tokenizer.get_prompt_ids(asr_prompt, return_tensors="pt")
+                prompt_ids = prompt_ids.to(pipe.model.device)
+                gen_kwargs["prompt_ids"] = prompt_ids
+                gen_kwargs["max_new_tokens"] = 300 
+            except Exception as e:
+                print(f"⚠️ Prompt processing failed: {e}")
+
+        result = pipe({"sampling_rate": sr, "raw": waveform_f32}, return_timestamps="word", generate_kwargs=gen_kwargs)
         chunks = result.get("chunks", [])
         
         segments = smart_balanced_split(text, target_words=12, max_words=srt_max_words)
@@ -596,7 +611,7 @@ def text_to_srt_whisper(text, audio_tuple, pipe, srt_max_words=17, language="zh"
     except Exception as e:
         return f"SRT Error: {e}"
 
-def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guidance, denoise, speed, duration, pp, po, mode, srt_max_words=17, gen_srt=True, convert_punc=True):
+def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guidance, denoise, speed, duration, pp, po, mode, asr_prompt="", srt_max_words=17, gen_srt=True, convert_punc=True):
     """
     Central orchestration loop for OmniVoice synthesis.
     Flow: 
@@ -668,7 +683,7 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
             # we MUST yield the optimized MP3 path (audio_path) immediately after TTS.
             # This allows the player to load ONCE and stay loaded during the ASR phase.
             yield audio_path, "", None, f"⏳ TTS Done ({duration_s:.1f}s). Running ASR for alignment..."
-            srt_content = text_to_srt_whisper(text, audio_tuple, WHISPER_PIPE, srt_max_words=srt_max_words)
+            srt_content = text_to_srt_whisper(text, audio_tuple, WHISPER_PIPE, srt_max_words=srt_max_words, language=language, asr_prompt=asr_prompt)
         
         # 4. Final Result Preparation
         # Keep audio_path as the MP3 for the UI yield to prevent reloads,
@@ -735,6 +750,11 @@ def build_app(model_path=None, whisper_path=None):
                             )
 
                             vc_lang = gr.Dropdown(label="Language", choices=_LANG_DISPLAY, value="Auto")
+                            vc_asr_prompt = gr.Textbox(
+                                label="Subtitle ASR Prompt", 
+                                placeholder="e.g. First few phrases of each language.",
+                                lines=1
+                            )
                             vc_speed = gr.Slider(0.5, 2.0, value=0.9, step=0.05, label="Speed")
                             vc_dur = gr.Number(label="Fixed Duration (sec)", value=0)
                             vc_steps = gr.Slider(4, 64, value=32, step=4, label="Inference Steps")
@@ -777,6 +797,11 @@ def build_app(model_path=None, whisper_path=None):
                                 
                         with gr.Accordion("Advanced Settings", open=False):
                             vd_lang = gr.Dropdown(label="Language", choices=_LANG_DISPLAY, value="Auto")
+                            vd_asr_prompt = gr.Textbox(
+                                label="Subtitle ASR Prompt", 
+                                placeholder="e.g. First few phrases of each language.",
+                                lines=1
+                            )
                             vd_speed = gr.Slider(0.5, 2.0, value=0.9, step=0.05, label="Speed")
                             vd_dur = gr.Number(label="Fixed Duration (sec)", value=0)
                             vd_steps = gr.Slider(4, 64, value=32, step=4, label="Inference Steps")
@@ -814,12 +839,17 @@ def build_app(model_path=None, whisper_path=None):
                 print(f"❌ Transcription failed: {e}")
                 return f"Error during transcription: {e}"
 
-        def vc_handler(*args):
+        def vc_handler(
+            text, lang, asr_prompt, ref, ref_text, instruct, steps, gs, dn, pp, po, gen_srt, srt_max_words, punc, speed, dur,
+            progress: gr.Progress = gr.Progress()
+        ):
+            if progress: progress(0, desc="🚀 Initializing...")
             for res in generate_core(
-                text=args[0], language=args[1], ref_audio=args[2], ref_text=args[3], 
-                instruct=args[4], num_step=args[5], guidance=args[6], denoise=args[7], 
-                convert_punc=args[8], speed=args[9], duration=args[10], 
-                pp=args[11], po=args[12], mode="clone", srt_max_words=args[13], gen_srt=args[14]
+                text=text, language=lang, asr_prompt=asr_prompt, ref_audio=ref, ref_text=ref_text, 
+                instruct=instruct, num_step=steps, guidance=gs, denoise=dn, 
+                convert_punc=punc, speed=speed, duration=dur, 
+                pp=pp, po=po, mode="clone", gen_srt=gen_srt,
+                srt_max_words=srt_max_words
             ):
                 yield res
             
@@ -870,19 +900,30 @@ def build_app(model_path=None, whisper_path=None):
         vc_transcribe_btn.click(transcribe_ref, inputs=[vc_ref], outputs=[vc_ref_text])
 
         vc_btn.click(
+            lambda: (gr.update(interactive=False), gr.update(visible=False), "⏳ Initializing..."),
+            outputs=[vc_btn, vc_dl, vc_status]
+        ).then(
             vc_handler,
-            inputs=[vc_text, vc_lang, vc_ref, vc_ref_text, vc_instruct, vc_steps, vc_gs, vc_dn, vc_punc, vc_speed, vc_dur, vc_pp, vc_po, vc_srt_max_words, vc_gen_srt],
+            inputs=[vc_text, vc_lang, vc_asr_prompt, vc_ref, vc_ref_text, vc_instruct, vc_steps, vc_gs, vc_dn, vc_pp, vc_po, vc_gen_srt, vc_srt_max_words, vc_punc, vc_speed, vc_dur],
             outputs=[vc_audio, vc_srt, vc_dl, vc_status]
-        ).then(lambda dl: gr.update(visible=bool(dl)), inputs=[vc_dl], outputs=[vc_dl])
+        ).then(
+            lambda dl: (gr.update(interactive=True), gr.update(visible=bool(dl))), 
+            inputs=[vc_dl], 
+            outputs=[vc_btn, vc_dl]
+        )
 
-        def vd_handler(text, lang, speed, dur, steps, gs, dn, punc, po, srt_max_words, gen_srt, *groups):
-            instruct = ", ".join([g for g in groups if g != "Auto"])
-            for res in generate_core(text, lang, None, None, instruct, steps, gs, dn, speed, dur, False, po, "design", srt_max_words=srt_max_words, gen_srt=gen_srt, convert_punc=punc):
+        def vd_handler(
+            text, lang, asr_prompt, speed, dur, steps, gs, dn, po, gen_srt, srt_max_words, punc, g1, g2, g3, g4, g5, g6,
+            progress: gr.Progress = gr.Progress()
+        ):
+            if progress: progress(0, desc="🚀 Designing Voice...")
+            instruct = ", ".join([g for g in [g1, g2, g3, g4, g5, g6] if g != "Auto"])
+            for res in generate_core(text, lang, None, None, instruct, steps, gs, dn, speed, dur, False, po, "design", asr_prompt=asr_prompt, gen_srt=gen_srt, convert_punc=punc, srt_max_words=srt_max_words):
                 yield res
 
         vd_btn.click(
             vd_handler,
-            inputs=[vd_text, vd_lang, vd_speed, vd_dur, vd_steps, vd_gs, vd_dn, vd_punc, vd_po, vd_srt_max_words, vd_gen_srt] + vd_groups,
+            inputs=[vd_text, vd_lang, vd_asr_prompt, vd_speed, vd_dur, vd_steps, vd_gs, vd_dn, vd_po, vd_gen_srt, vd_srt_max_words, vd_punc] + vd_groups,
             outputs=[vd_audio, vd_srt, vd_dl, vd_status]
         ).then(lambda dl: gr.update(visible=bool(dl)), inputs=[vd_dl], outputs=[vd_dl])
 
