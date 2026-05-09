@@ -509,7 +509,7 @@ def text_to_srt_whisper(text, audio_tuple, pipe, language="zh", asr_prompt="", t
         if torch.cuda.is_available():
             print(f"[SRT] VRAM Before ASR: {torch.cuda.memory_allocated()/1e9:.2f}GB")
             
-        gen_kwargs = {"return_timestamps": "word"}
+        gen_kwargs = {}
         if language and language != "Auto":
             gen_kwargs["language"] = language
             
@@ -534,6 +534,7 @@ def text_to_srt_whisper(text, audio_tuple, pipe, language="zh", asr_prompt="", t
             {"sampling_rate": sr, "raw": waveform_f32}, 
             chunk_length_s=30, 
             batch_size=1, 
+            return_timestamps="word",
             generate_kwargs=gen_kwargs
         )
         
