@@ -509,11 +509,32 @@ def text_to_srt_whisper(text, audio_tuple, pipe, language="zh", target_words=12,
         if torch.cuda.is_available():
             print(f"[SRT] VRAM Before ASR: {torch.cuda.memory_allocated()/1e9:.2f}GB")
             
+        gen_kwargs = {"return_timestamps": "word"}
+        if language and language != "Auto":
+            gen_kwargs["language"] = language
+            
+        if asr_prompt and asr_prompt.strip():
+            print(f"[SRT] Using Initial Prompt: {asr_prompt[:50]}...")
+            # We use the pipeline's tokenizer to get prompt_ids
+            # Note: We set language to None if prompt is provided to let prompt guide it
+            gen_kwargs["language"] = None 
+            try:
+                # get_prompt_ids is available in Whisper tokenizers/processors
+                # We need to access the tokenizer through the pipeline
+                prompt_ids = pipe.tokenizer.get_prompt_ids(asr_prompt, return_tensors="pt")
+                # Move to the same device as the model
+                prompt_ids = prompt_ids.to(pipe.model.device)
+                gen_kwargs["prompt_ids"] = prompt_ids
+                # Safety: Ensure max_new_tokens doesn't exceed model limits (448) when combined with prompt
+                gen_kwargs["max_new_tokens"] = 300 
+            except Exception as e:
+                print(f"⚠️ Prompt processing failed: {e}")
+
         result = pipe(
             {"sampling_rate": sr, "raw": waveform_f32}, 
             chunk_length_s=30, 
             batch_size=1, 
-            return_timestamps="word"
+            generate_kwargs=gen_kwargs
         )
         
         chunks = result.get("chunks", [])
@@ -620,7 +641,7 @@ def text_to_srt_whisper(text, audio_tuple, pipe, language="zh", target_words=12,
     except Exception as e:
         return f"SRT Error: {e}"
 
-def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guidance, denoise, speed, duration, pp, po, mode, gen_srt=True, convert_punc=True, srt_max_words=17, progress=gr.Progress()):
+def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guidance, denoise, speed, duration, pp, po, mode, asr_prompt="", gen_srt=True, convert_punc=True, srt_max_words=17, progress=gr.Progress()):
     """
     Central orchestration loop for OmniVoice synthesis.
     Flow: 
@@ -720,7 +741,8 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
             asr_res = {"content": None, "error": None}
             def run_asr():
                 try:
-                    asr_res["content"] = text_to_srt_whisper(text, audio_tuple, pipe, target_words=12, max_words=srt_max_words, progress=progress)
+                    # Pass the ASR prompt and language settings
+                    asr_res["content"] = text_to_srt_whisper(text, audio_tuple, pipe, language=language, asr_prompt=asr_prompt, target_words=12, max_words=srt_max_words, progress=progress)
                 except Exception as e:
                     import traceback
                     error_trace = traceback.format_exc()
@@ -819,6 +841,11 @@ def build_app(model_path=None, whisper_path=None):
                             )
 
                             vc_lang = gr.Dropdown(label="Language", choices=_LANG_DISPLAY, value="Auto")
+                            vc_asr_prompt = gr.Textbox(
+                                label="Subtitle ASR Prompt", 
+                                placeholder="e.g. 'This is an English and Français recording.'",
+                                lines=1
+                            )
                             vc_speed = gr.Slider(0.5, 2.0, value=0.9, step=0.05, label="Speed")
                             vc_dur = gr.Number(label="Fixed Duration (sec)", value=0)
                             vc_steps = gr.Slider(4, 64, value=32, step=4, label="Inference Steps")
@@ -861,6 +888,11 @@ def build_app(model_path=None, whisper_path=None):
                                 
                         with gr.Accordion("Advanced Settings", open=False):
                             vd_lang = gr.Dropdown(label="Language", choices=_LANG_DISPLAY, value="Auto")
+                            vd_asr_prompt = gr.Textbox(
+                                label="Subtitle ASR Prompt", 
+                                placeholder="e.g. 'This is an English and Français recording.'",
+                                lines=1
+                            )
                             vd_speed = gr.Slider(0.5, 2.0, value=0.9, step=0.05, label="Speed")
                             vd_dur = gr.Number(label="Fixed Duration (sec)", value=0)
                             vd_steps = gr.Slider(4, 64, value=32, step=4, label="Inference Steps")
@@ -884,7 +916,7 @@ def build_app(model_path=None, whisper_path=None):
                         vd_status = gr.Textbox(label="Status", interactive=False, lines=3)
 
         # Event Handlers
-        def transcribe_ref(audio, progress=gr.Progress()):
+        def transcribe_ref(audio, lang, asr_prompt, progress=gr.Progress()):
             if not audio: 
                 yield ""
                 return
@@ -896,9 +928,20 @@ def build_app(model_path=None, whisper_path=None):
                 res = {"text": None, "error": None}
                 def run():
                     try: 
+                        gen_kwargs = {}
+                        if lang and lang != "Auto":
+                            gen_kwargs["language"] = lang
+                        
+                        if asr_prompt and asr_prompt.strip():
+                            gen_kwargs["language"] = None
+                            prompt_ids = pipe.tokenizer.get_prompt_ids(asr_prompt, return_tensors="pt")
+                            prompt_ids = prompt_ids.to(pipe.model.device)
+                            gen_kwargs["prompt_ids"] = prompt_ids
+                            gen_kwargs["max_new_tokens"] = 300
+
                         # Use the pipeline directly on the audio path
                         # Whisper turbo is very fast for short ref audio
-                        out = pipe(audio, chunk_length_s=30, batch_size=1)
+                        out = pipe(audio, chunk_length_s=30, batch_size=1, generate_kwargs=gen_kwargs)
                         res["text"] = out.get("text", "").strip()
                     except Exception as e: 
                         res["error"] = str(e)
@@ -921,12 +964,12 @@ def build_app(model_path=None, whisper_path=None):
                 yield f"Error: {e}"
 
         def vc_handler(
-            text, lang, ref, ref_text, instruct, steps, gs, srt_max_words, dn, punc, speed, dur, pp, po, gen_srt,
+            text, lang, asr_prompt, ref, ref_text, instruct, steps, gs, srt_max_words, dn, punc, speed, dur, pp, po, gen_srt,
             progress: gr.Progress = gr.Progress()
         ):
             if progress: progress(0, desc="🚀 Initializing...")
             for res in generate_core(
-                text=text, language=lang, ref_audio=ref, ref_text=ref_text, 
+                text=text, language=lang, asr_prompt=asr_prompt, ref_audio=ref, ref_text=ref_text, 
                 instruct=instruct, num_step=steps, guidance=gs, denoise=dn, 
                 convert_punc=punc, speed=speed, duration=dur, 
                 pp=pp, po=po, mode="clone", gen_srt=gen_srt,
@@ -979,14 +1022,14 @@ def build_app(model_path=None, whisper_path=None):
         )
             
         # Transcription events (Manual only)
-        vc_transcribe_btn.click(transcribe_ref, inputs=[vc_ref], outputs=[vc_ref_text])
+        vc_transcribe_btn.click(transcribe_ref, inputs=[vc_ref, vc_lang, vc_asr_prompt], outputs=[vc_ref_text])
 
         vc_btn.click(
             lambda: (gr.update(interactive=False), gr.update(interactive=False), gr.update(visible=False), "⏳ Initializing..."),
             outputs=[vc_btn, vc_transcribe_btn, vc_dl, vc_status]
         ).then(
             vc_handler,
-            inputs=[vc_text, vc_lang, vc_ref, vc_ref_text, vc_instruct, vc_steps, vc_gs, vc_srt_max_words, vc_dn, vc_punc, vc_speed, vc_dur, vc_pp, vc_po, vc_gen_srt],
+            inputs=[vc_text, vc_lang, vc_asr_prompt, vc_ref, vc_ref_text, vc_instruct, vc_steps, vc_gs, vc_srt_max_words, vc_dn, vc_punc, vc_speed, vc_dur, vc_pp, vc_po, vc_gen_srt],
             outputs=[vc_audio, vc_srt, vc_dl, vc_status]
         ).then(
             lambda dl: (gr.update(interactive=True), gr.update(interactive=True), gr.update(visible=bool(dl))), 
@@ -996,17 +1039,17 @@ def build_app(model_path=None, whisper_path=None):
 
 
         def vd_handler(
-            text, lang, speed, dur, steps, gs, srt_max_words, dn, punc, po, gen_srt, g1, g2, g3, g4, g5, g6,
+            text, lang, asr_prompt, speed, dur, steps, gs, srt_max_words, dn, punc, po, gen_srt, g1, g2, g3, g4, g5, g6,
             progress: gr.Progress = gr.Progress()
         ):
             if progress: progress(0, desc="🚀 Designing Voice...")
             instruct = ", ".join([g for g in [g1, g2, g3, g4, g5, g6] if g != "Auto"])
-            for res in generate_core(text, lang, None, None, instruct, steps, gs, dn, speed, dur, False, po, "design", gen_srt, punc, srt_max_words=srt_max_words, progress=progress):
+            for res in generate_core(text, lang, None, None, instruct, steps, gs, dn, speed, dur, False, po, "design", asr_prompt=asr_prompt, gen_srt=gen_srt, punc=punc, srt_max_words=srt_max_words, progress=progress):
                 yield res
 
         vd_btn.click(
             vd_handler,
-            inputs=[vd_text, vd_lang, vd_speed, vd_dur, vd_steps, vd_gs, vd_srt_max_words, vd_dn, vd_punc, vd_po, vd_gen_srt] + vd_groups,
+            inputs=[vd_text, vd_lang, vd_asr_prompt, vd_speed, vd_dur, vd_steps, vd_gs, vd_srt_max_words, vd_dn, vd_punc, vd_po, vd_gen_srt] + vd_groups,
             outputs=[vd_audio, vd_srt, vd_dl, vd_status]
         ).then(lambda dl: gr.update(visible=bool(dl)), inputs=[vd_dl], outputs=[vd_dl])
 
