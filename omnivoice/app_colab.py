@@ -637,9 +637,9 @@ def text_to_srt_whisper(text, audio_tuple, pipe, language="zh", asr_prompt="", t
             srt_output += f"{i}\n{format_timestamp(start_time)} --> {format_timestamp(end_time)}\n{seg_text}\n\n"
             curr += len(s_clean)
         
-        return srt_output.strip()
+        return srt_output.strip(), whisper_full_text
     except Exception as e:
-        return f"SRT Error: {e}"
+        return f"SRT Error: {e}", ""
 
 def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guidance, denoise, speed, duration, pp, po, mode, asr_prompt="", gen_srt=True, convert_punc=True, srt_max_words=17, progress=gr.Progress()):
     """
@@ -738,11 +738,13 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
             # 3. SRT Generation (🚀 RADICAL HEARTBEAT)
             # Run Whisper in a thread so we can keep yielding heartbeats to the browser
             import threading
-            asr_res = {"content": None, "error": None}
+            asr_res = {"content": None, "raw": None, "error": None}
             def run_asr():
                 try:
                     # Pass the ASR prompt and language settings
-                    asr_res["content"] = text_to_srt_whisper(text, audio_tuple, pipe, language=language, asr_prompt=asr_prompt, target_words=12, max_words=srt_max_words, progress=progress)
+                    srt, raw = text_to_srt_whisper(text, audio_tuple, pipe, language=language, asr_prompt=asr_prompt, target_words=12, max_words=srt_max_words, progress=progress)
+                    asr_res["content"] = srt
+                    asr_res["raw"] = raw
                 except Exception as e:
                     import traceback
                     error_trace = traceback.format_exc()
@@ -789,6 +791,13 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
             with zipfile.ZipFile(zip_path, 'w') as z:
                 z.write(wav_path, arcname=f"{slug}.wav")
                 z.write(srt_path, arcname=f"{slug}.srt")
+                
+                # Debug: Include raw transcription
+                if asr_res.get("raw"):
+                    raw_txt_path = f"outputs/{unique_slug}_raw.txt"
+                    with open(raw_txt_path, "w", encoding="utf-8") as rf:
+                        rf.write(asr_res["raw"])
+                    z.write(raw_txt_path, arcname=f"debug_raw_transcription.txt")
         
         elapsed = time.time() - start_time
         tokens = len(text.strip())
