@@ -637,9 +637,17 @@ def text_to_srt_whisper(text, audio_tuple, pipe, language="zh", asr_prompt="", t
             srt_output += f"{i}\n{format_timestamp(start_time)} --> {format_timestamp(end_time)}\n{seg_text}\n\n"
             curr += len(s_clean)
         
-        return srt_output.strip(), whisper_full_text
+        debug_data = {
+            "gen_kwargs": {k: str(v) if k == "prompt_ids" else v for k, v in gen_kwargs.items()},
+            "chunk_count": len(chunks),
+            "whisper_full_text_len": len(whisper_full_text),
+            "raw_chunks": chunks[:100] # First 100 for safety
+        }
+        
+        return srt_output.strip(), whisper_full_text, debug_data
     except Exception as e:
-        return f"SRT Error: {e}", ""
+        import traceback
+        return f"SRT Error: {e}", "", {"error": str(e), "traceback": traceback.format_exc()}
 
 def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guidance, denoise, speed, duration, pp, po, mode, asr_prompt="", gen_srt=True, convert_punc=True, srt_max_words=17, progress=gr.Progress()):
     """
@@ -738,13 +746,14 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
             # 3. SRT Generation (🚀 RADICAL HEARTBEAT)
             # Run Whisper in a thread so we can keep yielding heartbeats to the browser
             import threading
-            asr_res = {"content": None, "raw": None, "error": None}
+            asr_res = {"content": None, "raw": None, "debug": None, "error": None}
             def run_asr():
                 try:
                     # Pass the ASR prompt and language settings
-                    srt, raw = text_to_srt_whisper(text, audio_tuple, pipe, language=language, asr_prompt=asr_prompt, target_words=12, max_words=srt_max_words, progress=progress)
+                    srt, raw, debug = text_to_srt_whisper(text, audio_tuple, pipe, language=language, asr_prompt=asr_prompt, target_words=12, max_words=srt_max_words, progress=progress)
                     asr_res["content"] = srt
                     asr_res["raw"] = raw
+                    asr_res["debug"] = debug
                 except Exception as e:
                     import traceback
                     error_trace = traceback.format_exc()
@@ -799,6 +808,15 @@ def generate_core(text, language, ref_audio, ref_text, instruct, num_step, guida
                         rf.write(asr_res["raw"])
                     z.write(raw_txt_path, arcname=f"debug_raw_transcription.txt")
                     print(f"DEBUG: Added debug_raw_transcription.txt to ZIP ({len(asr_res['raw'])} chars)")
+                
+                # Debug: Include JSON metadata
+                if asr_res.get("debug"):
+                    import json
+                    debug_json_path = f"outputs/{unique_slug}_debug.json"
+                    with open(debug_json_path, "w", encoding="utf-8") as jf:
+                        json.dump(asr_res["debug"], jf, indent=2, ensure_ascii=False)
+                    z.write(debug_json_path, arcname=f"debug_log.json")
+                    print(f"DEBUG: Added debug_log.json to ZIP")
         
         elapsed = time.time() - start_time
         tokens = len(text.strip())
