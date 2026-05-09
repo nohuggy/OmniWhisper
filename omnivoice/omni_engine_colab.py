@@ -102,7 +102,7 @@ class TTSEngine:
         final_waveform = np.concatenate(full_waveform)
         # Final yield with full waveform
         yield len(chunks), len(chunks), final_waveform
-    def transcribe(self, audio_path, language=None, asr_prompt=None):
+    def transcribe(self, audio_path):
         if not audio_path or not os.path.exists(audio_path):
             return ""
         try:
@@ -112,17 +112,7 @@ class TTSEngine:
                 audio_data = audio_data.mean(axis=-1)  # Convert to mono
             
             # Use the internal model's transcribe method
-            kw = {}
-            if language and language != "Auto":
-                kw["language"] = language
-            
-            if asr_prompt and asr_prompt.strip():
-                # Note: internal model uses whisper pipeline or similar
-                # We handle prompt injection if the model supports it
-                kw["language"] = None
-                kw["initial_prompt"] = asr_prompt
-
-            result = self.model.transcribe((audio_data, sr), **kw)
+            result = self.model.transcribe((audio_data, sr))
             
             # Handle both dictionary (with timestamps) and raw string results
             if isinstance(result, dict):
